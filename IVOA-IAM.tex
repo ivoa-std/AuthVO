@@ -77,21 +77,6 @@ Where the client is browser-based
 a service can often integrate information about the authentication
 methods required with the web page or web application through which
 it is accessed.
-\todo{is this true?  I don't understand browser-based authentication
-      or what makes it work all that well.
-      BM: Yes, I would say that's true.  Standard protocols like
-      Shibboleth and OpenID Connect have been widely adopted for
-      supporting authentication on web sites.
-      There are remaining authentication issues in the browser world
-      too, but standard orgs have their sights on these in their
-      roadmaps.  One problem in particilar, federated identity
-      management, is particularily important for the astronomy
-      community, and as of yet has no standard solution.
-      Federated OpenID Connect aims to address this.
-      https://openid.net/specs/openid-connect-federation-1_0-28.html
-      Here at CADC we are having to build a custom solution for
-      this to support the SRCNet and LSST communities.
-      }
 
 But a desktop VO client such as Aladin, TOPCAT or Python
 typically interacts with VO services differently, in one of two
@@ -221,9 +206,9 @@ such discovery is done reactively.
 
 The following terms are used with specific meanings in this document:
 
-\todo{Are these OK? Do they align with established usage?
-      Are there better choices?
-      I haven't heard use of 'permit' before, but it seems like a
+\todo{MT: Are these OK? Do they align with established usage?
+      Are there better choices?\\
+      BM: I haven't heard use of 'permit' before, but it seems like a
       good choice to me.}
 \begin{description}
 \item[protected]
@@ -450,24 +435,6 @@ The \verb|ivoa_x509| authentication scheme indicates that the service
 will accept X.509 client certificates as authentication permits,
 and describes how to acquire such certificates.
 
-\todo{
-  I am pretty ignorant about X.509.
-  This section should be checked by
-  somebody who knows what they're talking about.
-  BM: The aquisition of X.509 certificates is generally decoupled
-  from their use. Certificate Authorities (CAs) are separate entities
-  that work with Operating System providers and end users to
-  establish the trust relationship and identity verification needed
-  to make secure and verifyable HTTP calls.
-  However, in research fields particularily, organizations may issue
-  their own self-signed certificates.
-  Also, this may be a place to link the Credential Delegation
-  Protocol (CDP) service to this standard.  Probably requires more
-  discussion.
-  There's also discussion here of the evolution of CDP with OAuth
-  refresh tokens.
-}
-
 \begin{description}
   \item[Scheme name:] \verb|ivoa_x509|
   \item[Parameters:] \mbox{}
@@ -488,17 +455,6 @@ and describes how to acquire such certificates.
 A client in posession of a client certificate can use it to
 sign TLS (HTTPS) connections, and the service can examine the signature
 to authenticate the identity of the client.
-
-\todo{
-  Do we need to distinguish proxy from non-proxy certificates here?
-  I don't actually understand what proxy certificates are.
-  BM: I don't think so.  In practice, proxy certificates are
-  shorter-lived certificates.  CDP may mention them as an
-  implementation option, but I think that's all.
-  Additional note: support for proxy certificates in the linux
-  world is vanishing.  We've had to abondon them here and
-  replace them with regular certificates.
-}
 
 To use this scheme, the client must present a username and password
 to the endpoint given by the \verb|access_url| parameter,
