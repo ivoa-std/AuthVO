@@ -3,7 +3,7 @@
 \input gitmeta
 \usepackage[textsize=small,textwidth=3.8cm,backgroundcolor=yellow]{todonotes}
 
-\title{IVOA Interoperable Authentication Management}
+\title{IVOA Interoperable Authentication Protocol}
 
 % see ivoatexDoc for what group names to use here; use \ivoagroup[IG] for
 % interest groups.
@@ -25,7 +25,7 @@
 \begin{document}
 
 \begin{abstract}
-IVOA's Interoperable Authentication Management explains how
+IVOA's Interoperable Authentication Protocol explains how
 VO services can manage the authentication process for
 interoperability with clients, especially non-browser clients.
 Particularly, this document
@@ -34,14 +34,6 @@ support of specific authentication schemes and how
 clients can discover and use this information to access protected
 resources.
 \end{abstract}
-
-
-\todo{The title is up for debate.
-      Sara/Dave suggest maybe Interoperable Authentication Protocol instead?
-      Or something else.
-      BM: "Protocol" may be better than "Management" so it's IAP, instead of
-      IAM, which is a term in this same field meaning
-      "Identity and Access Management".}
 
 
 \section*{Acknowledgments}
@@ -190,7 +182,7 @@ scenarios.
 Fig.~\ref{fig:archdiag} shows the role this document plays within the
 IVOA architecture \citep{2021ivoa.spec.1101D}.
 
-IVOA-IAM provides a way to advertise authentication methods
+IAP provides a way to advertise authentication methods
 associated with existing VO services.
 For services like TAP \citep{2019ivoa.spec.0927D}
 that comply with VOSI \citep{2017ivoa.spec.0524G} to

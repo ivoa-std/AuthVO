@@ -1,4 +1,4 @@
-# IVOA-IAM
+# IVOA Interoperable Authentication Protocol
 
 This document describes how services in the
 [Virtual Observatory](https://ivoa.net)
