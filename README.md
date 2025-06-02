@@ -11,7 +11,9 @@ Stable versions of this document may become available through the
 To build a PDF or HTML version of this document, you will need a reasonably
 complete LaTeX installation, a sufficiently capable `make`, preferably
 [latexmk](https://personal.psu.edu/~jcc8/software/latexmk/) and probably
-[rsvg-convert](https://wiki.gnome.org/Projects/LibRsvg). For further
-details, see [ivoatexDoc](https://ivoa.net/documents/Notes/IVOATex/).
+[rsvg-convert](https://wiki.gnome.org/Projects/LibRsvg). Alternatively, IVOA
+provides a Docker Image with the required enviroment already installed
+([ivoatex-docker](https://github.com/ivoa/ivoatex-docker)). For further
+details, see [ivoatexDoc](https://ivoa.net/documents/Notes/IVOATexDoc/).
 
 This document is distributed under CC-BY-SA.
