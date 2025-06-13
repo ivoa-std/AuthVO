@@ -499,8 +499,13 @@ field in token responses.
   \item[Scheme name:] \verb|ivoa_bearer|
   \item[Parameters:] \mbox{}
   \begin{itemize}
-  \item \texttt{access\_url} (required): URL pointing to a discovery document that conforms to RFC 8414~\citep{rfc8414} . This document provides the metadata required for client configuration, including authorisation endpoints and other metadata.
-  \item \texttt{X-VO-Auth-Error} (optional): VO-specific error header. Examples include \texttt{expired\_token}, \texttt{invalid\_token}, or \texttt{invalid\_token\_type}.
+  \item{\verb|access_url| (required): URL pointing to a discovery document that conforms to RFC 8414~\citep{rfc8414} .
+  This document provides the metadata required for client configuration, including authorisation endpoints and other metadata.}
+  \item{\verb|standard_id| (required) ---
+        indicates how to authenticate at \verb|access_url|,
+        see Section~\ref{sec:standard-id}}
+  \item{\verb|X-VO-Auth-Error| (optional): VO-specific error header. Examples include \verb|expired_token|,
+  \verb|invalid_token|, or \verb|invalid_token_type|.}
   \end{itemize}
 \end{description}
 
@@ -508,7 +513,7 @@ When a protected resource is accessed without valid authentication, the service 
 
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ivoa_bearer
+WWW-Authenticate: ivoa_bearer standard_id="ivo://ivoa.net/sso#OAuth"
   access_url="https://auth.example.org/.well-known/openid-configuration"
 X-VO-Auth-Error: invalid_token_type
 \end{verbatim}
@@ -578,7 +583,7 @@ Authorization: Bearer abc123
 When expired:
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ivoa_bearer
+WWW-Authenticate: ivoa_bearer standard_id="ivo://ivoa.net/sso#OAuth"
   access_url="https://auth.example.org/.well-known/openid-configuration"
 X-VO-Auth-Error: expired_token
 \end{verbatim}
@@ -1031,8 +1036,8 @@ enabling secure, standards-compliant authentication without requiring embedded b
 HTTP response:
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ivoa_bearer
-service_url="https://auth.example.org/.well-known/openid-configuration"
+WWW-Authenticate: ivoa_bearer standard_id="ivo://ivoa.net/sso#OAuth"
+access_url="https://auth.example.org/.well-known/openid-configuration"
 X-VO-Auth-Error: missing_token
 \end{verbatim}
 This response tells the client that a Bearer token is required and provides a discovery URL for discovering the
