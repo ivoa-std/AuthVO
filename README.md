@@ -1,9 +1,17 @@
-# IVOA Interoperable Authentication Protocol
+# Authentication in the VO
 
 This document describes how services in the
 [Virtual Observatory](https://ivoa.net)
 can advertise their support for authentication methods,
 especially for use by non-browser clients.
+
+## Document Naming
+
+Note this document has undergone some name changes in its history;
+an earlier version was called IAP (Interoperable Authentication Protocol).
+The repository was renamed from IAP to AuthVO on 13 June 2025.
+
+## Access and usage
 
 Stable versions of this document may become available through the
 [IVOA document repository](http://ivoa.net/documents/).
@@ -17,3 +25,4 @@ provides a Docker Image with the required enviroment already installed
 details, see [ivoatexDoc](https://ivoa.net/documents/Notes/IVOATexDoc/).
 
 This document is distributed under CC-BY-SA.
+
