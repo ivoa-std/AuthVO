@@ -25,4 +25,3 @@ provides a Docker Image with the required enviroment already installed
 details, see [ivoatexDoc](https://ivoa.net/documents/Notes/IVOATexDoc/).
 
 This document is distributed under CC-BY-SA.
-
