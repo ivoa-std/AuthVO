@@ -485,60 +485,82 @@ and is a normalised triple of URI scheme, hostname, and port.
 
 There is an example in Section~\ref{sec:x509-example}.
 
-\subsubsection{\mbox{\tt ivoa\_bearer}}\label{sec:ivoa-bearer}
-The \verb|ivoa_bearer| authentication scheme allows VO services to request authentication via Bearer tokens,
-aligning with OAuth 2.0~\citep{rfc6749} and OpenID Connect standards. This scheme enables secure,
-standards-compliant authentication for VO clients and applications, while preserving interoperability with
-existing OAuth2 infrastructure and libraries.
 
-This approach is compatible with automated clients, desktop applications, and headless environments, and
-supports token expiration, refresh workflows, and secure origin scoping via the \texttt{allowed\_origins}
-field in token responses.
+\subsubsection{\mbox{\tt ivoa\_bearer}}\label{sec:ivoa-bearer}
+
+The \verb|ivoa_bearer| authentication scheme enables Virtual Observatory (VO) services to request Bearer tokens
+for secure access control. This approach is aligned with OAuth 2.0 \citep{rfc6749}, OpenID Connect, and the latest
+best practices such as the Authorization Code Flow with PKCE \citep{rfc7636}, offering a standards-compliant,
+interoperable solution for clients and services.
+
+This scheme is compatible with:
+\begin{itemize}
+  \item Interactive environments (e.g., notebooks, desktop apps) via the Authorization Code Flow with PKCE.
+  \item Headless clients (e.g., command-line tools or scripts) via the Device Authorization Flow \citep{rfc8628}.
+  \item Automated workflows using refresh tokens for reauthentication.
+\end{itemize}
+
+It supports token expiry and renewal, secure scoping via the \texttt{allowed\_origins} field or the modern
+\verb|oauth-authorization-server| discovery document \citep{rfc9728}, and integrates seamlessly with OAuth2-compatible
+infrastructures like Keycloak-based IAM services.
 
 \begin{description}
-  \item[Scheme name:] \verb|ivoa_bearer|
-  \item[Parameters:] \mbox{}
-  \begin{itemize}
-  \item{\verb|access_url| (required): URL pointing to a discovery document that conforms to RFC 8414~\citep{rfc8414} .
-  This document provides the metadata required for client configuration, including authorisation endpoints and other metadata.}
-  \item{\verb|standard_id| (required) ---
-        indicates how to authenticate at \verb|access_url|,
-        see Section~\ref{sec:standard-id}}
-  \item{\verb|X-VO-Auth-Error| (optional): VO-specific error header. Examples include \verb|expired_token|,
-  \verb|invalid_token|, or \verb|invalid_token_type|.}
-  \end{itemize}
+\item{{Scheme name:} \verb|ivoa_bearer|}
+\item{{Parameters:}
+\begin{itemize}
+  \item \verb|access_url| (required): URL to the RFC 8414 \citep{rfc8414} discovery document, providing essential metadata (e.g., endpoints, scopes).
+  \item \verb|standard_id| (required): Indicates how to authenticate using the specified \verb|access_url|
+  \item{\verb|X-VO-Auth-Error| (optional): A VO-specific error message. Typical values: \verb|missing_token|,
+  \verb|expired_token|, \verb|invalid_token|.}
+  \item \verb|X-VO-Auth-User-Action| (optional): A VO-specific info message.
+\end{itemize}}
 \end{description}
 
-When a protected resource is accessed without valid authentication, the service MUST respond:
+
+When a protected resource is accessed without valid authentication, the service responds with:
 
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
 WWW-Authenticate: ivoa_bearer standard_id="ivo://ivoa.net/sso#OAuth"
-  access_url="https://auth.example.org/.well-known/openid-configuration"
-X-VO-Auth-Error: invalid_token_type
+access_url="https://auth.example.org/.well-known/openid-configuration"
+X-VO-Auth-Error: missing_token
 \end{verbatim}
 
-In order to continue the authorisation process, clients MUST fetch and parse the discovery document.
-An example response is at follows:
+Clients MUST retrieve the discovery document at the given \verb|access_url|. A typical response includes:
 
 \begin{verbatim}
 {
   "issuer": "https://auth.example.org",
-  "token_endpoint": "https://auth.example.org/oauth/token",
   "authorization_endpoint": "https://auth.example.org/oauth/authorize",
+  "token_endpoint": "https://auth.example.org/oauth/token",
   "device_authorization_endpoint": "https://auth.example.org/oauth/device",
-  "registration_endpoint": "https://auth.example.org/oauth/register",
   "grant_types_supported": [
     "authorization_code",
     "refresh_token",
     "urn:ietf:params:oauth:grant-type:device_code"
   ],
+  "code_challenge_methods_supported": ["S256"],
   "scopes_supported": ["openid", "email", "profile"],
   "token_endpoint_auth_methods_supported": ["client_secret_post", "none"]
 }
 \end{verbatim}
 
-Once authorised, an authentication response should be provided as follows:
+\begin{description}
+\item{{Token acquisition:}
+
+Clients should initiate the Authorization Code Flow with PKCE by generating a \verb|code_verifier| and deriving a
+\verb|code_challenge| from it using SHA-256. The user is then redirected to the \verb|authorization_endpoint| for login.
+
+In browserless environments, the server may return a \texttt{401 Unauthorized} with an \texttt{X-VO-Auth-Error} such as:
+
+\begin{verbatim}
+X-VO-Auth-Error: login_required
+X-VO-Auth-User-Action: visit https://auth.example.org/oauth/authorize
+\end{verbatim}
+
+The user may then obtain the code via a browser and return it to the client, which exchanges it at the \texttt{token\_endpoint} using the original \texttt{code\_verifier}.
+
+Upon success, the client receives:
 
 \begin{verbatim}
 {
@@ -546,50 +568,50 @@ Once authorised, an authentication response should be provided as follows:
   "token_type": "Bearer",
   "expires_in": 3600,
   "refresh_token": "xyz789",
-  "allowed_origins": ["https://example.org", "https://data.example.org"]
+  "allowed_origins": [
+    "https://example.org",
+    "https://data.example.org"
+  ]
 }
-\end{verbatim}
+\end{verbatim}}
 
+\item{{Token Scoping:}
 \begin{itemize}
-  \item \texttt{allowed\_origins} (recommended): HTTP origins where the token may be used (legacy support). Clients MUST NOT use tokens elsewhere.
+  \item \verb|allowed_origins| (recommended): An array of HTTP origins where the token is valid. Clients MUST NOT use the token outside these origins.
+  \item If \verb|allowed_origins| is missing, the client MUST check for support of RFC 9728 \citep{rfc9728} by querying:
 \end{itemize}
-
-If \texttt{allowed\_origins} is not present, service MUST support RFC 9728~\citep{rfc9728}. In this case, clients continue
-discovery by requesting:
 
 \begin{verbatim}
 GET /.well-known/oauth-authorization-server
 \end{verbatim}
 
-This document, always present at a location relative to the issuer URL, produces a response like:
+This returns:
 
 \begin{verbatim}
 {
-  authorization_servers: ["https://auth.example.org"],
-  resource: "https://data.example.org"
+  "authorization_servers": ["https://auth.example.org"],
+  "resource": "https://data.example.org"
 }
-\end{verbatim}
+\end{verbatim}}
 
-where \texttt{authorization\_servers} is replacing the logic described by \texttt{allowed\_origins} for legacy services.
+\item{{Using Tokens:} Tokens must be included in the HTTP \texttt{Authorization} header:
 
-
-\textbf{Permit Usage}
-Include the access token in the HTTP request header:
 \begin{verbatim}
 Authorization: Bearer abc123
-\end{verbatim}
+\end{verbatim}}
 
-\textbf{Token Expiry and Refresh}
-When expired:
+\item{{Token Expiry and Refresh:} On expiration:
+
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
 WWW-Authenticate: ivoa_bearer standard_id="ivo://ivoa.net/sso#OAuth"
-  access_url="https://auth.example.org/.well-known/openid-configuration"
+access_url="https://auth.example.org/.well-known/openid-configuration"
 X-VO-Auth-Error: expired_token
 \end{verbatim}
 
-Clients SHOULD use the \texttt{refresh\_token} if available.
-
+Clients SHOULD use the provided \verb|refresh_token| to obtain a new access token, avoiding repeated interactive logins.
+There is an example in Section~\ref{sec:ivoa-bearer-example}.}
+\end{description}
 
 \subsection{Common Challenge Parameters for VO Schemes}
 \label{sec:common-params}
@@ -635,15 +657,21 @@ Currently defined values are:
 
   \item[{\tt ivo://ivoa.net/sso\#OAuth}]
         This value indicates that the service requires OAuth 2.0-based authentication
-        using a Bearer token. The exact login mechanism is not directly specified by
-        this identifier and MUST be discovered dynamically via a discovery URL provided at the
-        \texttt{service\_url}
-        parameter included in the \texttt{WWW-Authenticate} challenge. Clients are expected
+        using a Bearer token. The specific login mechanism is not directly specified by
+        this identifier and MUST be dynamically discovered via the discovery URL provided in the
+        \verb|service_url| parameter of the \texttt{WWW-Authenticate} challenge. Clients are expected
         to follow the metadata discovery process defined in RFC 8414~\citep{rfc8414} and,
-        if applicable, RFC 9728~\citep{rfc9728} to determine the supported grant types and endpoints.
-        The OAuth 2.0 flows most relevant to VO usage include the Device Authorization Grant (RFC 8628)
-        and the Authorization Code Grant for native apps (RFC 8252). Access and refresh tokens are acquired
-        through standard OAuth2 token endpoints and used in the Authorization header via the Bearer scheme.
+        if applicable, RFC 9728~\citep{rfc9728}, to determine the supported endpoints and authorisation
+        server configuration.
+
+        In this profile, only the Authorization Code Flow with Proof Key for Code Exchange (PKCE),
+        as defined in RFC 7636~\citep{rfc7636} and recommended for native apps in RFC 8252~\citep{rfc8252},
+        is supported. This ensures secure and standards-compliant authentication in both interactive
+        and semi-interactive environments.
+
+        Access and refresh tokens are acquired through the authorization and token endpoints
+        defined in the discovery document and must be included in subsequent requests
+        using the HTTP \texttt{Authorization} header with the Bearer scheme.
 
 \end{description}
 
@@ -1019,181 +1047,125 @@ content-type: text/xml
 </uws:jobs>
 \end{verbatim}
 }
+\subsection{OAuth Authorization Code Flow with PKCE (RFC 7636)}
+\label{sec:ivoa-bearer-example}
 
-\subsection{OAuth Device Code Flow (RFC 8628)}
+In interactive environments such as desktop applications, Jupyter notebooks, or scripts requiring manual user
+authentication, the OAuth 2.0 Authorization Code Flow with Proof Key for Code Exchange (PKCE) enables secure
+token acquisition without requiring a client secret. It is especially suitable for public clients and supports
+flexible workflows, including those where a browser is not directly accessible from the client environment.
 
-Headless clients such as command-line tools, HPC batch jobs, or remote scripts often lack access
-to a local browser or a graphical user interface. Traditional OAuth flows like the Authorization
-Code Grant (RFC 8252) assume user interaction through a browser, which may not be available or secure
-in non-interactive environments. The Device Code Flow~\citep{rfc8628} is specifically designed for these cases:
-it allows the client to initiate authentication by displaying a short code to the user, who completes the login
-process in a browser on another device. This flow separates the user interaction from the headless environment,
-enabling secure, standards-compliant authentication without requiring embedded browsers, cookies, or redirect handling.
+\subsubsection*{Before Execution}
 
-\subsubsection{Before execution}
 \begin{enumerate}
-\item{\textbf{Receive Unauthorised error:} The client attempts to access a protected resource and receives the following
-HTTP response:
-\begin{verbatim}
+  \item \textbf{Initial request and discovery:} The client attempts to access a protected resource and receives a
+  \texttt{401 Unauthorized} response:
+
+  \begin{verbatim}
 HTTP/1.1 401 Unauthorized
 WWW-Authenticate: ivoa_bearer standard_id="ivo://ivoa.net/sso#OAuth"
 access_url="https://auth.example.org/.well-known/openid-configuration"
 X-VO-Auth-Error: missing_token
-\end{verbatim}
-This response tells the client that a Bearer token is required and provides a discovery URL for discovering the
-authorisation server's metadata. The client MUST fetch and parse this discovery document (per [RFC 8414]) to continue.
-From the discovery metadata, the client identifies among others:
-\begin{itemize}
-\item \verb|device_authorization_endpoint|: the URL to initiate device login
-\item \verb|token_endpoint|: where the client polls and refreshes tokens
-\item{\verb|grant_types_supported|: confirms support for device code flow (urn:ietf:params:oauth:grant-type:device\_code).
-Also, \verb|refresh_token| for token refreshing.}
-\item \verb|scopes_supported|: available scopes (e.g., openid for user authentication or offline\_access to request refresh tokens)
-\end{itemize}}
+  \end{verbatim}
 
-\item{\textbf{Request device code:} The client sends a request to the authorisation server \verb|device_authorization_endpoint|
-to obtain a device code and user code for authentication.
-\begin{verbatim}
-curl -X POST https://auth.example.org/oauth/device
-  -d 'client_id=my-cli-client&scope=openid profile'
-\end{verbatim}}
-The response will contain, among others, metadata of a \verb|user_code|, a \verb|device_code| and a \verb|verification_uri|
+  This response includes a discovery URL. The client fetches the OpenID Connect discovery document, identifying:
 
-\item{\textbf{Prompt to user:} The application parses the response and displays a message instructing the user to visit a
-              \verb|verification_uri| and enter the \verb|user_code| on a device with browser access.
-\begin{verbatim}
-echo "Visit https://auth.example.org/activate and
-      enter code ABC-123"
-\end{verbatim}}
+  \begin{itemize}
+    \item \texttt{authorization\_endpoint} — the URL to initiate user login
+    \item \texttt{token\_endpoint} — used to exchange authorization codes for tokens
+    \item \texttt{code\_challenge\_methods\_supported} — must support \texttt{S256}
+    \item \texttt{grant\_types\_supported} — must include \texttt{authorization\_code}
+  \end{itemize}
 
-\item{\textbf{Poll for access token:} The client periodically polls the \verb|token_endpoint|
-to check if the user completed the authorisation, sending the \verb|client_id| and \verb|device_code|
-\begin{verbatim}
+  \item \textbf{Generate PKCE parameters:} The client creates a random \texttt{code\_verifier} and computes a SHA-256
+  derived \verb|code_challenge|:
+
+  \begin{verbatim}
+code_verifier = "randomstring123"
+code_challenge = BASE64URL-ENCODE(SHA256(code_verifier))
+  \end{verbatim}
+
+  \item \textbf{Authorize via browser:} There are two possible paths:
+
+  \begin{itemize}
+    \item \textbf{(a) Automatic browser launch:} In environments with browser access (e.g., local desktops or notebooks),
+    the client constructs the URL and opens it:
+
+    \begin{verbatim}
+https://auth.example.org/oauth/authorize?
+  response_type=code&
+  client_id=my-client&
+  redirect_uri=http://localhost:8080/callback&
+  scope=openid profile offline_access&
+  code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&
+  code_challenge_method=S256
+    \end{verbatim}
+
+    A temporary local HTTP server listens at \texttt{http://localhost:8080/callback} to receive the redirect containing
+    the authorisation code.
+
+    \item \textbf{(b) Manual browser flow:} If the Python client is running in a non-interactive or headless environment
+    (e.g., remote shell or batch job), the server may respond with a \texttt{401 Unauthorized} and include an instruction
+    to use a browser for login:
+
+    \begin{verbatim}
+X-VO-Auth-Error: login_required
+X-VO-Auth-User-Action: visit https://auth.example.org/oauth/authorize
+    \end{verbatim}
+
+    The user authenticates manually in a separate browser, receives the authorisation code (e.g., from a redirect URI or
+    copy-paste page), and provides it to the client script via configuration or prompt.
+  \end{itemize}
+
+  \item \textbf{Exchange code for tokens:} Once the client has obtained the code (via local redirect or user input),
+  it performs the token exchange:
+
+  \begin{verbatim}
 curl -X POST https://auth.example.org/oauth/token
-  -d 'grant_type=urn:ietf:params:oauth:grant-type:device_code&
-                  device_code=abc123&client_id=my-cli-client'
-\end{verbatim}}
+  -d 'grant_type=authorization_code'
+  -d 'code=SplxlOBeZQQYbYS6WxSbIA'
+  -d 'redirect_uri=http://localhost:8080/callback'
+  -d 'client_id=my-client'
+  -d 'code_verifier=randomstring123'
+  \end{verbatim}
 
-\item{\textbf{Authorisation success:} On authorisation success, a JSON document is received with an \verb|access_token|
-and a \verb|refresh_token|}
+  The server responds with an \verb|access_token| and optionally a \verb|refresh_token|.
+\end{enumerate}
 
-\item{\textbf{Use access token:} Operation execution can be invoked using the \verb|access_token|
-\begin{verbatim}
+\subsubsection*{During Execution}
+
+\begin{itemize}
+  \item \textbf{Access protected resources:} The client includes the \verb|access_token| in HTTP requests:
+
+  \begin{verbatim}
 GET /vo-resource
-Authorization: Bearer SlAV32hkKG
-\end{verbatim}}
-\end{enumerate}
+Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR...
+  \end{verbatim}
 
-\subsubsection{During execution}
-\begin{enumerate}
-\item{\textbf{Secure automation via refresh token}
-For recurring or non-interactive workflows, the client may store the \verb|refresh_token| and later use it to obtain new access tokens:
-\begin{verbatim}
+  \item \textbf{Refresh token support:} If the authorisation server issues a \verb|refresh_token|, the client may use
+  it to obtain new access tokens:
+
+  \begin{verbatim}
 curl -X POST https://auth.example.org/oauth/token
-  -d 'grant_type=refresh_token&
-                  refresh_token=xyz456&client_id=my-cli-client'
-\end{verbatim}}
-\end{enumerate}
+  -d 'grant_type=refresh_token'
+  -d 'refresh_token=xyz456'
+  -d 'client_id=my-client'
+  \end{verbatim}
 
-This enables:
-\begin{itemize}
-\item Scheduled access (e.g., cron jobs)
-\item HPC workflows
-\item Re-authentication without re-prompting the user
+  This enables:
+
+  \begin{itemize}
+    \item Resuming sessions in notebooks
+    \item Long-term access from scripts without user interaction
+    \item Scheduled or re-authenticated use without password reuse
+  \end{itemize}
+
+  \textbf{Security Note:} Refresh tokens must be stored securely. If leaked, they permit long-term access.
 \end{itemize}
 
-\textit{Warning! Refresh tokens must be stored securely. If compromised, they allow long-term access to the user’s identity.}
-
-
-\subsection{OAuth Authorization Code Flow (RFC 8252)}
-Desktop applications, such as rich GUI tools, typically have access to a local web browser and
-can listen on loopback interfaces (e.g., \texttt{localhost}) for redirects. The Authorization Code Flow~\citep{rfc8252}
-is the recommended method for these applications because it allows secure delegation of authentication to the user's
-preferred identity provider. It involves redirecting the user to a browser for login, after which an authorisation code
-is returned and exchanged for an access token. This flow ensures that sensitive credentials never pass through the client
-application directly, improves compatibility with federated identity providers, and supports refresh tokens and fine-grained
-scope control.
-\begin{enumerate}
-  \item{}\textbf{Obtain the authorisation endpoint after error:} After authorisation error (see previous section), discover the \verb|authorization_endpoint|
-  using the \verb|openid-configuration| URI. For this flow, the grant type supported in the \verb|grant_types_supported| list MUST
-  be \verb|authorization_code| for first authorisation and \verb|refresh_token| for token refreshing.
-  \item{\textbf{Open browser:} The application launches the user’s browser using the \verb|authorization_endpoint| URL that begins the authorisation process
-  \begin{verbatim}
-  open https://auth.example.com/authorize?
-  response_type=code&
-  client_id=YOUR_CLIENT_ID&
-  redirect_uri=http://127.0.0.1:{port}/callback&
-  scope=openid ivoa:data.read&
-  code_challenge=<CODE_CHALLENGE>&
-  code_challenge_method=S256&
-  state=<STATE>"
-  \end{verbatim}
-  To generate the \verb|code_challenge|, it is required to implement PKCE (Proof Key for Code Exchange). That implies to
-  select a \verb|CODE_VERIFIER| and a \verb|STATE| (both, random strings generated by the client). The \verb|code_challenge|
-  will be generated by:
-  \begin{verbatim}
-    BASE64URL(SHA256(<CODE_VERIFIER>))
-  \end{verbatim}
-  The client MUST securely store both \verb|CODE_VERIFIER| and \verb|STATE| for future use.}
-\item{\textbf{Handle redirect:} After the user logs in, the identity provider redirects to the app's registered redirect
-                                URI with an authorisation code. This URL is provided by the client application and it will
-                                receive the authentication code at the parameter \verb|code|. This code MUST be
-                                securely saved at the client for future use
-\begin{verbatim}
-http://127.0.0.1:{port}/callback?
-  code=SplxlOBeZQQYbYS6WxSbIA&state=xyz
-\end{verbatim}
-Clients must validate the state and ensure the incoming request matches the originally stored values to prevent injection or hijacking.}
-
-\item{\textbf{Exchange code for token:} The application sends the authorisation code to the token endpoint to obtain an
-                                        access token (and optionally a refresh token).
-\begin{verbatim}
-curl -X POST https://auth.example.org/oauth/token
-  -d 'grant_type=authorization_code&code=SplxlOBeZQQYbYS6WxSbIA&
-       redirect_uri=http://127.0.0.1:{port}/callback&
-       client_id=my-app&
-       code_verifier=<CODE_VERIFIER>'
-\end{verbatim}
-The client will receive in response a JSON document, including an \verb|access_token| and a \verb|refresh_token|. For example:
-\begin{verbatim}
-{
-  "access_token": "SlAV32hkKG",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "refresh_token": "8xLOxBtZp8",
-  "id_token": "eyJhbGciOiJSUzI1..."
-}
-\end{verbatim}
-\textit{Note: Tokens will not be received at the redirect URI but an invocation like:}
-\begin{verbatim}
-http://127.0.0.1:{port}/callback?
-  code=SplxlOBeZQQYbYS6WxSbIA&state=xyz
-\end{verbatim}
-}
-\item{\textbf{Token refresh:} Applications could refresh tokens as in previous section}
-\end{enumerate}
-\textbf{Note of the Redirect URI:}
-The \verb|redirect_uri| tells the authorisation server where to send the user (along with the authorisation code) after
-they’ve successfully logged in and granted consent.
-This is how the client gets the authorisation code needed to obtain tokens in the next step.
-\begin{enumerate}
-\item{\textbf{Loopback Interface (Recommended):}
-This opens a temporary HTTP server on localhost to receive the redirect. Format:
-\begin{verbatim}
-http://127.0.0.1:{port}/callback
-\end{verbatim}
-
-Pros: Doesn't require registering a custom URI scheme. Supported on: Desktop apps (Electron, Python, Java, etc.)}
-\item{\textbf{Custom URI Scheme):}
-The app registers a custom scheme (e.g., myapp://callback) with the OS.
-Format:
-\begin{verbatim}
-com.example.app:/oauth2redirect
-or
-myapp://callback
-\end{verbatim}
-Pros: Works well on mobile (Android, iOS). Cons: Must register scheme in app manifest; some phishing risk if misconfigured.}
-\end{enumerate}
+This flow allows both seamless user-driven login during interactive use and pre-obtained authorisation for restricted
+clients. It avoids passwords and client secrets, enforces token best practices, and enables full OAuth 2.0 compliance
+even in lightweight clients.
 
 \appendix
 \section{Changes from Previous Versions}
