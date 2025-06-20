@@ -307,7 +307,10 @@ in subsequent requests,
 but the challenge provides no information about how to acquire
 such a token which means it is not suitable for clients lacking
 prior knowledge about the target service, as described in
-Section~\ref{sec:intro}.
+Section~\ref{sec:intro}. In order to allow those connections, the
+{\em bearer token} response should provide the service configuration
+metadata, usually contained in the \verb|discovery_url|.
+See \ref{sec:ivoa-bearer}.
 
 Other methods of authentication over HTTP also exist
 and are used by VO services,
@@ -500,12 +503,12 @@ such as Keycloak-based IAM services.
 
 \begin{description}
 \item{{Scheme name:} \verb|ivoa_bearer|}
-\item{{Parameters:}
+\item{\textbf{Parameters:}
 \begin{itemize}
-  \item \verb|access_url| (required): URL to the RFC 8414 \citep{rfc8414} discovery document, providing essential metadata such as endpoints and supported grant types.
-  \item \verb|standard_id| (required): Indicates the protocol and profile used for authentication (\texttt{ivo://ivoa.net/sso\#OAuth}).
-  \item \verb|X-VO-Auth-Error| (optional): A VO-specific error message. Typical values include \verb|missing_token|, \verb|expired_token|, or \verb|invalid_token|.
-  \item \verb|X-VO-Auth-User-Action| (optional): A VO-specific informational message for user guidance.
+  \item \verb|discovery_url| (required): URL to a discovery document following RFC 8414, providing metadata such as supported grant types and endpoints.
+  \item \verb|standard_id| (required): Must be \verb|ivo://ivoa.net/sso#OAuth|, indicating use of the IVOA OAuth2 profile.
+  \item \verb|error| (optional): OAuth 2.0-compatible error code, e.g., \verb|invalid_request|, \verb|invalid_token|, or \verb|expired_token|.
+  \item \verb|error_description| (optional): Human-readable explanation of the error condition.
 \end{itemize}}
 \end{description}
 
@@ -513,13 +516,15 @@ When a protected resource is accessed without valid authentication, the service 
 
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ivoa_bearer standard_id="ivo://ivoa.net/sso#OAuth"
-access_url="https://auth.example.org/.well-known/openid-configuration"
-X-VO-Auth-Error: missing_token
+WWW-Authenticate: ivoa_bearer \
+  standard_id="ivo://ivoa.net/sso#OAuth", \
+  discovery_url="https://auth.example.org/.well-known/openid-configuration", \
+  error="missing_token", \
+  error_description="Authentication required"
 \end{verbatim}
 
-Clients MUST retrieve the discovery document at the given \verb|access_url|. A typical response includes:
-
+The client MUST retrieve and parse the discovery document.
+Here there is an example of a \verb|discovery_url|:
 \begin{verbatim}
 {
   "issuer": "https://auth.example.org",
@@ -533,8 +538,27 @@ Clients MUST retrieve the discovery document at the given \verb|access_url|. A t
 }
 \end{verbatim}
 
+Possible error codes are standardised on oAuth. A typical list of possible codes can
+be found in Table \ref{table:oAuthCodes}.
+\begin{table}[]
+\centering
+\begin{tabular}{ll}
+\textbf{Error Code} & \textbf{Description} \\
+\verb|invalid_request| & {Request is missing required parameters or malformed.} \\
+\verb|unauthorized_client| & {The client is not allowed to use this grant type.} \\
+\verb|access_denied| & {The resource owner denied the request.} \\
+\verb|unsupported_response_type| & {Response type is not supported by the server.} \\
+\verb|invalid_scope| & {The requested scope is invalid or unknown.} \\
+\verb|invalid_token| & {The token is expired, malformed, or invalid.} \\
+\verb|expired_token| & {The token has expired and must be refreshed.} \\
+\end{tabular}
+\caption{Standard OAuth 2.0 Error Codes (RFC 6749)}
+\label{table:oAuthCodes}
+\end{table}
+
+
 \begin{description}
-\item{{Token acquisition:}
+\item{\textbf{Token acquisition:}
 
 Clients MUST use the Device Authorization Flow. This involves requesting a device code from the
 \verb|device_authorization_endpoint|, prompting the user to authenticate via a browser, and polling the
@@ -557,7 +581,7 @@ Upon success, the client receives:
 Authorization: Bearer abc123
 \end{verbatim}}
 
-\item{{Token Expiry and Refresh:}
+\item{\textbf{Token Expiry and Refresh:}
 
 When an access token expires, the server may respond:
 
@@ -568,7 +592,20 @@ access_url="https://auth.example.org/.well-known/openid-configuration"
 X-VO-Auth-Error: expired_token
 \end{verbatim}
 
-Clients SHOULD use the provided \verb|refresh_token| to obtain a new access token without prompting the user.
+The client SHOULD use the refresh token to obtain a new access token:
+
+\begin{verbatim}
+curl -X POST https://auth.example.org/oauth/token \
+     -d 'grant_type=refresh_token' \
+     -d 'refresh_token=xyz789' \
+     -d 'client_id=my-client-id'
+\end{verbatim}
+
+\textbf{Note 1:} Refresh tokens must be stored securely and must not be exposed.\\
+\textbf{Note 2:} The \verb|client_id| must correspond to a pre-registered application,
+approved and controlled by IVOA. These \verb|client_id|s are pre-registered into the
+IAM services by administrators.
+
 }
 \end{description}
 
@@ -1019,21 +1056,23 @@ authentication must occur externally (e.g., via a mobile device or desktop brows
 \subsubsection{Before Execution}
 
 \begin{description}
-\item{\textbf{Receive Unauthorized Error}
+\item{\textbf{Receive Unauthorized Error}}
 
 When an unauthenticated client attempts to access a protected resource, the server responds with:
 
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ivoa_bearer standard_id="ivo://ivoa.net/sso#OAuth"
-access_url="https://auth.example.org/.well-known/openid-configuration"
-X-VO-Auth-Error: missing_token
+WWW-Authenticate: ivoa_bearer \
+  error="invalid_request", \
+  error_description="Missing access token", \
+  standard_id="ivo://ivoa.net/sso#OAuth", \
+  discovery_url="https://auth.example.org/.well-known/openid-configuration"
 \end{verbatim}
 
 This indicates that a Bearer token is required. The client \textbf{MUST} fetch and parse the OpenID Connect Discovery
-document located at the \verb|access_url|.}
+document located at the \verb|discovery_url|.
 
-\item{\textbf{Extract Relevant Metadata}
+\item{\textbf{Extract Relevant Metadata}}
 
 From the discovery document \\
 (\texttt{https://auth.example.org/.well-known/openid-configuration}), \\
@@ -1065,9 +1104,9 @@ Example metadata:
   ],
   "scopes_supported": ["openid", "profile", "offline_access"]
 }
-\end{verbatim}}
+\end{verbatim}
 
-\item{\textbf{Request Device Code}
+\item{\textbf{Request Device Code}}
 
 The client initiates the device flow:
 
@@ -1076,9 +1115,9 @@ curl -X POST https://auth.example.org/oauth/device \
      -d 'client_id=my-client-id&scope=openid profile'
 \end{verbatim}
 
-This URL is obtained from \verb|device_authorization_endpoint|.}
+This URL is obtained from \verb|device_authorization_endpoint|.
 
-\item{\textbf{Prompt User to Authenticate}
+\item{\textbf{Prompt User to Authenticate}}
 
 The client displays a message like:
 
@@ -1088,9 +1127,9 @@ https://auth.example.org/activate
 in a browser and enter the code: ABC-123
 \end{verbatim}
 
-Alternatively, the complete link from \verb|verification_uri_complete| can be shown directly.}
+Alternatively, the complete link from \verb|verification_uri_complete| can be shown directly.
 
-\item{\textbf{Poll for Token}
+\item{\textbf{Poll for Token}}
 
 The client polls the token endpoint (from \verb|token_endpoint|):
 
@@ -1099,9 +1138,9 @@ curl -X POST https://auth.example.org/oauth/token \
      -d 'grant_type=urn:ietf:params:oauth:grant-type:device_code' \
      -d 'device_code=abc123' \
      -d 'client_id=my-client-id'
-\end{verbatim}}
+\end{verbatim}
 
-\item{\textbf{Receive Tokens}
+\item{\textbf{Receive Tokens}}
 
 After successful user authentication, the client receives:
 
@@ -1114,22 +1153,23 @@ After successful user authentication, the client receives:
 }
 \end{verbatim}
 
-The tokens should be stored securely for future requests.}
+The tokens should be stored securely for future requests.
 
-\item{\textbf{Use the Token}
+\item{\textbf{Use the Token}}
 
 The client accesses protected resources by including the access token in the \verb|Authorization| header:
 
 \begin{verbatim}
 GET /vo-resource
 Authorization: Bearer SlAV32hkKG
-\end{verbatim}}
+\end{verbatim}
+
 \end{description}
 
 \subsubsection{During Execution}
 
 \begin{description}
-\item{\textbf{Token Refresh}
+\item{\textbf{Token Refresh}}
 
 To maintain access for long-running jobs or recurring tasks, the client refreshes the token using:
 
@@ -1142,8 +1182,9 @@ curl -X POST https://auth.example.org/oauth/token \
 
 This request is also sent to the \verb|token_endpoint|.
 
-\textbf{Note:} Refresh tokens must be stored securely. If compromised, they provide persistent access to user resources.}
+\textbf{Note:} Refresh tokens must be stored securely. If compromised, they provide persistent access to user resources.
 \end{description}
+
 
 \appendix
 \section{Changes from Previous Versions}
