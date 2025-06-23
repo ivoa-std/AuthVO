@@ -1,5 +1,7 @@
 # Authentication in the VO
 
+[![PDF-Preview](https://img.shields.io/badge/Preview-PDF-blue)](../../releases/download/auto-pdf-preview/AuthVO-draft.pdf)
+
 This document describes how services in the
 [Virtual Observatory](https://ivoa.net)
 can advertise their support for authentication methods,
