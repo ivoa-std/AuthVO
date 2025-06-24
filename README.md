@@ -26,9 +26,7 @@ details, see [ivoatexDoc](https://ivoa.net/documents/Notes/IVOATexDoc/).
 
 This document is distributed under CC-BY-SA.
 __________________________________________________________
-PDF preview of the last commit applied on this repository.
-
-**DO NOT PUBLISH
+PDF preview. DO NOT PUBLISH.
 
 [![PDF-Preview](https://img.shields.io/badge/Preview-PDF-blue)](../../releases/download/auto-pdf-preview/AuthVO-draft.pdf)
 
