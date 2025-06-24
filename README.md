@@ -1,11 +1,5 @@
 # Authentication in the VO
 
-PDF preview of the last commit applied on this repository.
-
-**DO NOT PUBLISH
-
-[![PDF-Preview](https://img.shields.io/badge/Preview-PDF-blue)](../../releases/download/auto-pdf-preview/AuthVO-draft.pdf)
-
 This document describes how services in the
 [Virtual Observatory](https://ivoa.net)
 can advertise their support for authentication methods,
@@ -31,3 +25,10 @@ provides a Docker Image with the required enviroment already installed
 details, see [ivoatexDoc](https://ivoa.net/documents/Notes/IVOATexDoc/).
 
 This document is distributed under CC-BY-SA.
+__________________________________________________________
+PDF preview of the last commit applied on this repository.
+
+**DO NOT PUBLISH
+
+[![PDF-Preview](https://img.shields.io/badge/Preview-PDF-blue)](../../releases/download/auto-pdf-preview/AuthVO-draft.pdf)
+
