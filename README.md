@@ -1,5 +1,8 @@
 # Authentication in the VO
 
+PDF preview of the last commit applied on this repository.
+It will be updated automatically after each merge of a PullRequest.
+**DO NOT PUBLISH THIS PRE-RELEASE!
 [![PDF-Preview](https://img.shields.io/badge/Preview-PDF-blue)](../../releases/download/auto-pdf-preview/AuthVO-draft.pdf)
 
 This document describes how services in the
