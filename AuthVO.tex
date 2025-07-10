@@ -465,7 +465,7 @@ sign requests to protected resources within the domain of the challenge.
 
 If the client does not hold any such certificate,
 and the \verb|access_url|/\verb|standard_id| pair is present,
-it may obtain one by presenting a username and password
+it may obtain one by presenting credentials
 to the endpoint given by the \verb|access_url| parameter,
 in the form defined by the \verb|standard_id| parameter.
 If authentication is successful, a 200 OK response must be returned
@@ -901,10 +901,13 @@ The 401 Unauthorized response means that authentication
 is required to access the service.
 The \verb|Bearer| challenge (\rfc{6750}) means we can authenticate with
 a Bearer Token if we have or know how to get one, but we don't.
-The unparameterised \verb|ivoa_x509| challenge means we can authenticate
-with a certificate if we have one, but we don't.
-We can however use the parameterised \verb|ivoa_x509| challenge
-(Section~\ref{sec:ivoa-x509}) which informs how to acquire
+The unparameterised \verb|ivoa_x509| challenge means
+the client can, in principle, authenticate with a certificate
+from any valid CA and not just one issued by the endpoint in the
+parameterised challenge.  
+Without having such a certificate however we can use
+the parameterised \verb|ivoa_x509| challenge
+(Section~\ref{sec:ivoa-x509}) which advises one way to acquire
 a suitable certificate.
 It has a \verb|standard_id| of \verb|BasicAA| (Section~\ref{sec:standard-id})
 so we transmit user credentials using
