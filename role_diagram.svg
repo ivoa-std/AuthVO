@@ -49,6 +49,6 @@
 
   <svg x="568" y="435"><rect height="18" x="0" y="0" width="34" class="rec"/><text class="doclabel" y="12.5" x="17">VOSI</text></svg>
 
-  <svg x="300" y="435"><rect height="18" x="0" y="0" width="32" class="thisrec"/><text class="doclabel" y="12.5" x="16">IAP</text></svg><svg x="300" y="435"><ellipse rx="31" ry="15" cx="16" cy="9" fill="none" stroke="red" stroke-width="3"/></svg>
+  <svg x="300" y="428"><rect height="18" x="0" y="0" width="48" class="thisrec"/><text class="doclabel" y="12.5" x="24">AuthVO</text></svg><svg x="300" y="428"><ellipse rx="39" ry="15" cx="24" cy="9" fill="none" stroke="red" stroke-width="3"/></svg>
  
 </g></svg>

@@ -2,7 +2,7 @@
 # for the targets available.
 
 # short name of your document (edit $DOCNAME.tex; would be like RegTAP)
-DOCNAME = IAP
+DOCNAME = AuthVO
 
 # count up; you probably do not want to bother with versions <1.0
 DOCVERSION = 1.0

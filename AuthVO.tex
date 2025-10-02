@@ -183,7 +183,7 @@ scenarios.
 Fig.~\ref{fig:archdiag} shows the role this document plays within the
 IVOA architecture \citep{2021ivoa.spec.1101D}.
 
-IAP provides a way to advertise authentication methods
+AuthVO provides a way to advertise authentication methods
 associated with existing VO services.
 For services like TAP \citep{2019ivoa.spec.0927D}
 that comply with VOSI \citep{2017ivoa.spec.0524G} to
@@ -313,6 +313,7 @@ Section~\ref{sec:intro}. In order to allow those connections, the
 metadata, usually contained in the \verb|discovery_url|.
 See \ref{sec:ivoa-bearer}.
 
+
 Other methods of authentication over HTTP also exist
 and are used by VO services,
 for instance use of cookies and of X.509 certificates.
@@ -429,41 +430,59 @@ There is an example in Section~\ref{sec:cookie-example}.
 
 The \verb|ivoa_x509| authentication scheme indicates that the service
 will accept X.509 client certificates as authentication permits,
-and describes how to acquire such certificates.
+and optionally describes how to acquire a suitable certificate.
+
+The standard usage model for X.509 certificates is that 
+a person or organisation obtains a certificate from a
+Certification Authority (CA) once its identification has
+been verified by a Registration Authority.
+
+A client in posession of a client certificate can then use it to
+sign TLS (HTTPS) connections, and the service can examine the signature
+to authenticate the identity of the client.
+Such authentication will succeed if the service trusts the signing CA.
 
 \begin{description}
   \item[Scheme name:] \verb|ivoa_x509|
   \item[Parameters:] \mbox{}
   \begin{itemize}
-    \item \verb|access_url| (required) ---
-          indicates where to get the certificate,
+    \item \verb|access_url| (optional) ---
+          indicates where to get a suitable certificate,
           see Section~\ref{sec:access-url}
-    \item \verb|standard_id| (required) ---
+    \item \verb|standard_id| (required iff \verb|access_url| is present) ---
           indicates how to authenticate at \verb|access_url|,
           see Section~\ref{sec:standard-id}
   \end{itemize}
-  \item[Login response:] PEM-encoded X.509 certificate chain
-                         including private key
+  \item[Login response (if used):] PEM-encoded X.509 certificate chain
+                                   including private key
   \item[Scope:] Origin of challenge URL
 \end{description}
 
+The \verb|ivoa_x509| challenge exists in two forms:
+with and without the \verb|access_url|/\verb|standard_id| parameter pair.
+These optional parameters advise the client how to obtain a certificate
+for use within the domain of the challenge if it does not already have one.
 
-A client in posession of a client certificate can use it to
-sign TLS (HTTPS) connections, and the service can examine the signature
-to authenticate the identity of the client.
+For either form of the challenge,
+if the client is in possession of a certificate
+signed by a CA it expects the service to trust, it may use it to
+sign requests to protected resources within the domain of the challenge.
 
-To use this scheme, the client must present a username and password
+If the client does not hold any such certificate,
+and the \verb|access_url|/\verb|standard_id| pair is present,
+it may obtain one by presenting credentials
 to the endpoint given by the \verb|access_url| parameter,
 in the form defined by the \verb|standard_id| parameter.
 If authentication is successful, a 200 OK response must be returned
 whose body is an X.509 certificate chain including its private key,
 in PEM format.  The \header{Content-Type} header of this response
-should be ``{\tt application/x-pem-file}''. \todo{should it?}
-Current implementations support only RSA encoding.
-\todo{I copied this from a code comment but I don't know what it means}
+should be ``{\tt application/x-pem-file}''.
 If authentication fails, a 401 or 403 response should be returned.
 Once in possession of the returned certificate,
 the client can use it to sign subsequent requests to protected resources.
+Certificates obtained in this way may not be usable in all X.509 contexts
+(i.e. may not be signed by a widely trusted CA),
+but should be usable within the domain of the current challenge.
 
 Since client certificates achieve authentication by signing requests
 using public key cryptography, they cannot be stolen by third parties,
@@ -610,7 +629,6 @@ IAM services by administrators.
 }
 \end{description}
 
-
 \subsection{Common Challenge Parameters for VO Schemes}
 \label{sec:common-params}
 
@@ -652,7 +670,6 @@ Currently defined values are:
         These items are passed as the values of parameters
         ``{\tt username}'' and ``{\tt password}'' respectively,
         transmitted in {\tt application/x-www-form-urlencoded} format.
-
   \item[{\tt ivo://ivoa.net/sso\#OAuth}]
         This value indicates that the service requires OAuth 2.0-based authentication
         using a Bearer token. The specific login mechanism is not directly specified by
@@ -678,9 +695,6 @@ Currently defined values are:
   but at time of writing these values are already in use in
   (a few) deployed services, so it could be painful to change them.
 }
-
-
-
 
 \section{Challenge/Response Use in the VO}
 \label{sec:cr-use}
@@ -982,8 +996,7 @@ Content-Type: text/xml;charset=UTF-8
 % https://ws-uv.canfar.net/youcat/capabilities,
 % whose certificate acquisition endpoint is at
 % https://ws.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/cred/generate.
-% But at time of writing it wasn't really working (no parameters in challenge)
-% and it uses optional, rather than mandatory, authentication.
+% However YouCat uses optional, rather than mandatory, authentication.
 
 Probe the VOSI-capabilities endpoint of a TAP service to check
 for authentication modality (Section~\ref{sec:modalities}):
@@ -991,9 +1004,10 @@ for authentication modality (Section~\ref{sec:modalities}):
 \begin{verbatim}
 % curl --head https://abc.example.net/tap/capabilities
 HTTP/1.1 401 Unauthorized
+www-authenticate: Bearer
+www-authenticate: ivoa_x509
 www-authenticate: ivoa_x509 standard_id="ivo://ivoa.net/sso#BasicAA",
                   access_url="https://xyz.example.net/cert/generate"
-www-authenticate: Bearer
 \end{verbatim}
 }
 
@@ -1002,10 +1016,16 @@ The 401 Unauthorized response means that authentication
 is required to access the service.
 The \verb|Bearer| challenge (\rfc{6750}) means we can authenticate with
 a Bearer Token if we have or know how to get one, but we don't.
-We can however use the \verb|ivoa_x509| challenge
-(Section~\ref{sec:ivoa-x509});
-it has a \verb|standard_id| of \verb|BasicAA| (Section~\ref{sec:standard-id})
-so transmit user credentials using
+The unparameterised \verb|ivoa_x509| challenge means
+the client can, in principle, authenticate with a certificate
+from any valid CA and not just one issued by the endpoint in the
+parameterised challenge.  
+Without having such a certificate however we can use
+the parameterised \verb|ivoa_x509| challenge
+(Section~\ref{sec:ivoa-x509}) which advises one way to acquire
+a suitable certificate.
+It has a \verb|standard_id| of \verb|BasicAA| (Section~\ref{sec:standard-id})
+so we transmit user credentials using
 HTTP Basic Authentication to the \verb|access_url|:
 
 {\footnotesize
@@ -1216,7 +1236,6 @@ This request is also sent to the \verb|token_endpoint|.
 
 \textbf{Note:} Refresh tokens must be stored securely. If compromised, they provide persistent access to user resources.
 \end{description}
-
 
 \appendix
 \section{Changes from Previous Versions}
