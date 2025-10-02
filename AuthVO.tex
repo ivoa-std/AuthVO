@@ -3,7 +3,7 @@
 \input gitmeta
 \usepackage[textsize=small,textwidth=3.8cm,backgroundcolor=yellow]{todonotes}
 
-\title{IVOA Interoperable Authentication Protocol}
+\title{Authentication in the Virtual Observatory}
 
 % see ivoatexDoc for what group names to use here; use \ivoagroup[IG] for
 % interest groups.
@@ -13,6 +13,7 @@
 \author{Sara Bertocco}
 \author{Patrick Dowler}
 \author{Brian Major}
+\author{Jesus Salgado}
 
 \editor{Mark Taylor}
 
@@ -25,7 +26,7 @@
 \begin{document}
 
 \begin{abstract}
-IVOA's Interoperable Authentication Protocol explains how
+This document explains how
 VO services can manage the authentication process for
 interoperability with clients, especially non-browser clients.
 Particularly, this document
@@ -1105,6 +1106,37 @@ Example metadata:
   "scopes_supported": ["openid", "profile", "offline_access"]
 }
 \end{verbatim}
+
+\item{\textbf{Dynamic Client Registration}}
+Before initiating the Device Authorization Flow, clients may need to dynamically register with the Authorization Server in order to obtain a \texttt{client\_id}.  
+
+This process is described in the OAuth 2.0 Dynamic Client Registration Protocol (RFC~\cite{rfc591}).
+
+\begin{verbatim}
+curl -X POST https://auth.example.org/oauth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "client_name": "My VO Tool",
+    "grant_types": ["urn:ietf:params:oauth:grant-type:device_code"],
+    "token_endpoint_auth_method": "none"
+  }'
+\end{verbatim}
+
+The server responds with a JSON object containing the newly assigned \texttt{client\_id} (and optionally a \texttt{client\_secret} if required):
+
+\begin{verbatim}
+{
+  "client_id": "my-client-id-123",
+  "client_secret": "optional-secret"
+}
+\end{verbatim}
+
+The client MUST store the \texttt{client\_id} securely and reuse it for future sessions.  
+This ensures that scripts, tools, or applications can obtain valid credentials even if they are not pre-registered with the VO infrastructure.  
+ 
+In practice, some infrastructures may pre-register a small set of trusted clients (e.g., TOPCAT or Astroquery), but in general the mechanism of RFC~\cite{rfc7591} ensures that any compliant client can obtain credentials.  
+This registration step precedes the Device Authorization Grant (RFC~\cite{rfc8628}) and provides the necessary \texttt{client\_id} for the subsequent requests.
+
 
 \item{\textbf{Request Device Code}}
 
