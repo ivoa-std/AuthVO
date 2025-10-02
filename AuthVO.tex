@@ -526,7 +526,6 @@ such as Keycloak-based IAM services.
 \item{\textbf{Parameters:}
 \begin{itemize}
   \item \verb|discovery_url| (required): URL to a discovery document following RFC 8414, providing metadata such as supported grant types and endpoints.
-  \item \verb|standard_id| (required): Must be \verb|ivo://ivoa.net/sso#OAuth|, indicating use of the IVOA OAuth2 profile.
   \item \verb|error| (optional): OAuth 2.0-compatible error code, e.g., \verb|invalid_request|, \verb|invalid_token|, or \verb|expired_token|.
   \item \verb|error_description| (optional): Human-readable explanation of the error condition.
 \end{itemize}}
@@ -537,7 +536,6 @@ When a protected resource is accessed without valid authentication, the service 
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
 WWW-Authenticate: ivoa_bearer \
-  standard_id="ivo://ivoa.net/sso#OAuth", \
   discovery_url="https://auth.example.org/.well-known/openid-configuration", \
   error="missing_token", \
   error_description="Authentication required"
@@ -607,7 +605,7 @@ When an access token expires, the server may respond:
 
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ivoa_bearer standard_id="ivo://ivoa.net/sso#OAuth"
+WWW-Authenticate: ivoa_bearer 
 access_url="https://auth.example.org/.well-known/openid-configuration"
 X-VO-Auth-Error: expired_token
 \end{verbatim}
@@ -622,9 +620,7 @@ curl -X POST https://auth.example.org/oauth/token \
 \end{verbatim}
 
 \textbf{Note 1:} Refresh tokens must be stored securely and must not be exposed.\\
-\textbf{Note 2:} The \verb|client_id| must correspond to a pre-registered application,
-approved and controlled by IVOA. These \verb|client_id|s are pre-registered into the
-IAM services by administrators.
+\textbf{Note 2:} These \verb|client_id|s are registered using dynamic client registration (see \ref{sec:ivoa-bearer-example}).
 
 }
 \end{description}
@@ -1086,7 +1082,6 @@ HTTP/1.1 401 Unauthorized
 WWW-Authenticate: ivoa_bearer \
   error="invalid_request", \
   error_description="Missing access token", \
-  standard_id="ivo://ivoa.net/sso#OAuth", \
   discovery_url="https://auth.example.org/.well-known/openid-configuration"
 \end{verbatim}
 
