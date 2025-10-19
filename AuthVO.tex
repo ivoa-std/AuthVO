@@ -118,11 +118,11 @@ is done directly
 over the HTTP connection from which the resource is requested.
 More modern/secure/flexible authentication methods however tend to
 rely on additional interaction with other, unspecified, endpoints
-prior to the request itself.  For instance OAuth2 requires presentation
+prior to the request itself.  For instance OAuth 2.0 requires presentation
 of a Bearer Token to retrieve protected resources from a given URL,
 but there is no way given only that URL to determine where or how
 to acquire this token;
-in a typical OAuth2 usage scenario such information is known up front
+in a typical OAuth 2.0 usage scenario such information is known up front
 by the components making the request.
 
 No industry standard mechanism appears to exist to solve the
@@ -301,7 +301,7 @@ If these schemes are used it is highly recommended
 to require a TLS connection (HTTPS not HTTP) to avoid interception of
 the credentials.
 
-Services using OAuth2 generally make use of the Bearer scheme.
+Services using OAuth 2.0 generally make use of the Bearer scheme.
 In this case the challenged client supplies a {\em bearer token}
 in subsequent requests,
 but the challenge provides no information about how to acquire
@@ -559,7 +559,7 @@ Currently defined values are:
 \subsection{Bearer Tokens}
 
 Bearer Tokens form the permit for
-the OAuth2 authorization framework,
+the OAuth 2.0 authorization framework,
 % Terminology: it's called an "Authorization Framework"
 % in the title of \rfc{6749} and \rfc{6750}.
 which is used by a number of VO data providers.
@@ -569,17 +569,120 @@ following the keyword ``{\tt Bearer}''
 in an \header{Authorization} HTTP request header,
 as described by \rfc{6750}.
 
-Various methods of token acquisition are defined by OAuth2 and
-associated standards, but at time of writing it's not clear which if
-any of these are suitable for use by clients lacking prior knowledge
-of the services for which they are intended,
-and no standard scoping mechanisms seem to be defined.
+Whilst the two initial ``core'' OAuth 2.0 RFCs (namely \rfc{6749} and \rfc{6750})
+assume that the three roles in the system\footnote{The client, the authorization
+  server and the resource server; for the VO a resource server would be a
+  service providing DALI endpoints, and the authorization server the OAuth 2.0
+server allowing users to log in} are defined beforehand, there are multiple
+extensions to the framework developed by the IETF Web Authorization Protocol
+Working Group\footnote{\url{https://datatracker.ietf.org/wg/oauth/about/}} which
+allow for discovery and registration, as well as addressing the need to support
+different kinds of clients (e.g. mobile or headless clients).
+Section~\ref{sec:oauth-for-vo} provides a list of OAuth 2.0 RFCs that must be
+supported to ensure interoperability, though both clients and servers may
+support additional RFCs or other extensions (as it is expected that most
+clients and servers will use existing libraries and services, rather than
+writing custom code to support OAuth 2.0).
 
-This document does not therefore currently recommend any way in
-which non-browser VO clients can use Bearer Tokens,
-but it is hoped that progress will be made on this in future.
+There are also further frameworks which extend OAuth 2.0, most notably OpenID
+Connect (commonly abbreviated as OIDC), as well as updates to the ``core''
+OAuth 2.0 RFCs (which are still in draft currently as of publication). The former
+are discussed in section~\ref{sec:oidc-for-vo}, while the latter is discussed in
+section~\ref{sec:new-oauth-rfc}.
 
+Finally, in appendix~\ref{sec:oauth-resouces}, links to useful references and
+tutorials for OAuth 2.0 are provided, as well as a list of additional RFCs to
+consider when using which libraries, services and providers to use.
 
+\subsubsection{Required RFCs for Bearer Token support in the VO}
+\label{sec:oauth-for-vo}
+
+The list of required RFCs that clients and servers MUST support are:
+\begin{itemize}
+  \item \rfc{6749} and \rfc{6750} which are the ``core'' OAuth 2.0 RFCs.
+  \item \rfc{7591} which allows clients to dynamically register, rather than
+    requiring manual intervention by a human.
+  \item \rfc{8414} which enables clients to discover information about the
+    authorization server.
+  \item \rfc{8628} which defines the Device Authorization Grant enabling
+    headless clients (e.g. Python scripts) to authenticate.
+  \item \rfc{9728} which extends \rfc{8414} to allow clients to start the
+    discovery process via the \header{WWW-Authenticate} header.
+\end{itemize}
+These six RFCs cover the full discovery process, from discovering that OAuth 2.0
+is required to sending the bearer token to the resource server, and are the
+minimal set of RFCs to ensure interoperability. Each of these RFCs provides
+examples (which we will not duplicate here). Additionally, other than
+\rfc{9728}\footnote{\rfc{9728} is the newest RFC of this set, having come out in
+April 2025, and hence has less written about it.}, there are numerous resources
+online about these RFCs, with section~\ref{sec:oauth-resouces} providing links
+to a curated selection.
+
+There are three additional RFCs that clients and servers SHOULD support:
+\begin{itemize}
+  \item \rfc{7636} which improves the security of the authentication process.
+  \item \rfc{8252} which outlines how ``Native'' applications (i.e. outside the
+    browser) should complete the authentication process.
+  \item \rfc{9700} which provides details of how to best implement OAuth 2.0
+    securely, and which directly leads into the (in draft) OAuth 2.1.
+\end{itemize}
+%% JT - I would add https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps
+%% to this list when it is published.
+These RFCs (two of which are ``Best Current Practice'' RFCs) aim to improve the
+security of OAuth 2.0, and so should be implemented where possible.
+
+\subsubsection{OpenID Connect}
+\label{sec:oidc-for-vo}
+
+OpenID Connect (OIDC) is a collection of specifications by the OpenID
+Foundation\footnote{\url{https://openid.net/}} which extend OAuth 2.0 framework,
+both to add in identity information, but also to enable it to be used more
+broadly and to provide extensions for specific target groups (e.g. Banking and
+Government IDs). As most VO clients should not need identity information (the
+access token from OAuth 2.0 should be sufficient), there is no current need for
+specifying a required set of OIDC specifications to use within the VO.
+VO data providers are free to use OIDC to provide a consistent user schema
+within their services but MUST NOT require that VO clients use OIDC. As future
+use cases may arise that require VO clients to use identity information, VO
+clients are not forbidden from using OIDC endpoints, but MUST NOT assume that
+they exist for all services.
+
+Of the various specifications published under the OIDC banner, the following are
+worth knowing about:
+\begin{itemize}
+  \item OpenID Connect Core
+    1.0\footnote{\url{https://openid.net/specs/openid-connect-core-1_0.html}}:
+    Defines a standard user profile schema, an endpoint to query that schema and
+    ID tokens.
+  \item OpenID Connect Discovery
+    1.0\footnote{\url{https://openid.net/specs/openid-connect-discovery-1_0.html}}:
+    The OIDC equivalent to \rfc{8414}, and predates \rfc{8414} such that fields
+    from OpenID Connect Discovery are allowed explicitly by \rfc{8414}. VO
+    clients MAY use this endpoint, but MUST NOT assume it exists for all
+    services.
+  \item OpenID Connect Dynamic Client Registration
+    1.0\footnote{\url{https://openid.net/specs/openid-connect-registration-1_0.html}}:
+    The OIDC equivalent to \rfc{7591}, though \rfc{7591} aims to be more
+    general (and has an overlapping author list). VO clients MAY use this
+    endpoint, but MUST NOT assume it exists for all services.
+\end{itemize}
+
+\subsubsection{OAuth 2.1 in the VO}
+\label{sec:new-oauth-rfc}
+
+Currently, OAuth
+2.1\footnote{\url{https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1}}
+is in draft, however it reflects existing changes and expectations defined
+across multiple earlier RFCs (primarily ``Best Current Practice'' RFCs). There
+is a section in that document which outlines what the changes are, but the short
+summary is the Implicit Grant and Resource Owner Password Credentials
+Grant\footnote{This is where the user directly enters their username and
+password into the OAuth 2.0 client.} are removed, and the other grants have their
+security tightened up.
+
+These changes may mean that authorization servers currently use by VO data
+providers may not support the future OAuth 2.1, and so VO clients should
+consider when they migrate to OAuth 2.1 carefully.
 
 \section{Challenge/Response Use in the VO}
 \label{sec:cr-use}
@@ -957,6 +1060,42 @@ content-type: text/xml
 No previous versions yet.
 % these would be subsections "Changes from v. WD-..."
 % Use itemize environments.
+
+\section{Additional Resources for OAuth 2.0 and OpenID Connect}
+\label{sec:oauth-resouces}
+
+By far the most useful resource is \url{https://oauth.net/}, which provides
+up-to-date information on what is happening in the ecosystem; links to
+tutorials, libraries and providers; links to the various standards (both RFCs
+and those developed outside the IETF); plus lots of good advice and guidance
+(see as an example \url{https://oauth.net/id-tokens-vs-access-tokens/}).
+
+The next useful resource is
+\url{https://fusionauth.io/articles/oauth/modern-guide-to-oauth}, which provides
+a single document covering all the key concepts of OAuth 2.0, along with those
+of OpenID Connect, and is far more readable than the various RFCs.
+
+\subsection{Additional RFCs to consider}
+\label{sec:additional-oauth-rfcs}
+
+Whilst section~\ref{sec:oauth-for-vo} provides a list of RFCs that clients and
+servers must implement for interoperability, there are other RFCs that are worth
+being considered by implementers that are not required for interoperability.
+These primarily involve interactions between the authorization server and the
+resource server, and hence are internal to the VO data provider. The list of
+RFCs is as follows:
+
+\begin{itemize}
+  \item \rfc{7009} provides a standard way to request access token revocation.
+  \item \rfc{7662} provides a standard way for resource servers to ask the
+    authorization server for details about the access token that was sent by the
+    client (such as which client performed the authentication and revocation
+    status). This can be useful to avoid using JWTs as access tokens, as when
+    details about the user become large (e.g. in many groups), the size of the
+    access token can become excessive and cause issues with request size.
+  \item \rfc{9068} defines a common schema for JWTs as access tokens.
+\end{itemize}
+
 
 
 % NOTE: IVOA recommendations must be cited from docrepo rather than ivoabib
