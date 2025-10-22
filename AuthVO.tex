@@ -214,7 +214,7 @@ The following terms are used with specific meanings in this document:
 \item[credentials]
       Secret information known to a user, such as a username and password,
       that can be used to acquire a {\em permit}
-\item[authentication domain]
+\item[domain]
       A set of HTTP endpoints sharing the same authentication arrangements;
       the same {\em permit\/} is applicable to all members of the same domain
       and should not be presented to endpoints outside that domain
@@ -342,24 +342,24 @@ Section~\ref{sec:common-params}:
 \verb|standard_id| for the credential submission method.
 
 
-\subsection{Scope}\label{sec:scope}
+\subsection{Domain}\label{sec:domain}
 
-A major consideration for these schemes is authentication scope,
-that is some rule about the domain (set of endpoints) within which an
+A major consideration for these schemes is \emph{authentication domain},
+that is some rule about the set of endpoints for which an
 acquired permit is valid.
-The permit is confidential information and so must not be leaked to services
-outside the domain.
+The permit is confidential information and so must not be leaked to
+(potentially hostile) services outside its domain of intended use.
 But users may want to access multiple resources within the same domain
 and should not be made to present their credentials
 multiple times where not necessary.
 The client may also be managing multiple permits
 for multiple different domains at once.
 So the permit must be delivered with sufficient
-implicit or explicit scoping
-information for the client to tell for each subsequent request
+implicit or explicit information to allow the client
+to determine for any given resource request
 whether that permit should be presented,
-i.e.\ whether it falls within that permit's domain.
-The nature and form of this scoping information is scheme-specific.
+i.e.\ whether that endpoint falls within the permit's domain.
+The nature and form of this domain information is scheme-specific.
 
 
 
@@ -388,7 +388,7 @@ and describes how to acquire such cookies.
           see Section~\ref{sec:standard-id}
   \end{itemize}
   \item[Login response:] \header{Set-Cookie} header
-  \item[Scope:] As defined by \rfc{6265}
+  \item[Domain:] As defined by \rfc{6265}
 \end{description}
 
 Cookies are text strings received in the {\tt Set-Cookie}
@@ -413,7 +413,7 @@ the client can present them in a \header{Cookie} header as defined
 by \rfc{6265} for subsequent requests to protected resources.
 If multiple cookies were received, they should all be presented.
 
-Cookies come with an associated scope, defined by the content
+Cookies come with an associated domain, defined by the content
 of the \header{Set-Cookie} header in conjunction with \rfc{6265},
 so compliant cookie-handling
 libraries are able to determine the domain for a given cookie.
@@ -432,7 +432,7 @@ a person or organisation obtains a certificate from a
 Certification Authority (CA) once its identification has
 been verified by a Registration Authority.
 
-A client in posession of a client certificate can then use it to
+A client in possession of a client certificate can then use it to
 sign TLS (HTTPS) connections, and the service can examine the signature
 to authenticate the identity of the client.
 Such authentication will succeed if the service trusts the signing CA.
@@ -450,7 +450,7 @@ Such authentication will succeed if the service trusts the signing CA.
   \end{itemize}
   \item[Login response (if used):] PEM-encoded X.509 certificate chain
                                    including private key
-  \item[Scope:] Origin of challenge URL
+  \item[Domain:] Origin of challenge URL
 \end{description}
 
 The \verb|ivoa_x509| challenge exists in two forms:
@@ -484,7 +484,7 @@ using public key cryptography, they cannot be stolen by third parties,
 so there are no security issues associated with attempting to use them
 to access services outside of the intended authentication domain.
 However using them for inapplicable services is inefficient and clumsy
-so some scoping is desirable.
+so some domain restriction is desirable.
 The authentication domain of a certificate acquired using this scheme is
 considered to be the {\em Origin\/} of the URL from which
 the challenge was received.
@@ -492,7 +492,7 @@ Origin is defined by section 4.3.1 of \rfc{9110}
 and is a normalised triple of URI scheme, hostname, and port.
 
 \todo{
-  I've made up this tentative scoping rule for certificates
+  I've made up this tentative domain restriction rule for certificates
   without wider consultation.
   It's what the AUTH library currently does.
   Could use Protection Space like Basic Auth instead of Origin,
@@ -573,7 +573,7 @@ Various methods of token acquisition are defined by OAuth2 and
 associated standards, but at time of writing it's not clear which if
 any of these are suitable for use by clients lacking prior knowledge
 of the services for which they are intended,
-and no standard scoping mechanisms seem to be defined.
+and no standard domain restriction mechanisms seem to be defined.
 
 This document does not therefore currently recommend any way in
 which non-browser VO clients can use Bearer Tokens,
