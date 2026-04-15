@@ -2,6 +2,9 @@
 \input tthdefs
 \input gitmeta
 \usepackage[textsize=small,textwidth=3.8cm,backgroundcolor=yellow]{todonotes}
+\newcommand{\subsubsubsection}[1]{\paragraph{#1}\mbox{}\\}
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{4}
 
 \title{Authentication in the Virtual Observatory}
 
@@ -515,11 +518,9 @@ The \verb|ivoa_bearer| authentication scheme enables Virtual Observatory (VO) se
 for secure access control. This approach is aligned with OAuth 2.0 \citep{rfc6749} and OpenID Connect \citep{openid},
 offering a standards-compliant and interoperable solution for clients and services.
 
-This scheme supports authentication for headless clients (e.g., command-line tools or scripts) via the
-Device Authorization Flow \citep{rfc8628}, enabling login through a secondary browser-enabled device.
+This scheme supports authentication for headless clients (e.g., command-line tools or scripts) via the Device Authorization Flow \citep{rfc8628}, enabling login through a secondary browser-enabled device.
 
-It also supports token expiry and renewal via refresh tokens, and integrates with OAuth2-compatible infrastructures
-such as Keycloak-based IAM services.
+It also supports token expiry and renewal via refresh tokens, and integrates with OAuth2-compatible infrastructures such as Keycloak-based IAM services.
 
 \begin{description}
 \item{{Scheme name:} \verb|ivoa_bearer|}
@@ -541,13 +542,29 @@ WWW-Authenticate: ivoa_bearer \
   error_description="Authentication required"
 \end{verbatim}
 
-The client MUST retrieve and parse the discovery document.
+The \verb|discovery_url| MUST point to a document conforming to RFC~8414 (OAuth
+2.0 Authorization Server Metadata) or OpenID Connect Discovery. It provides the
+necessary metadata for client configuration, including:
+
+\begin{itemize}
+  \item \verb|token_endpoint| — URL to obtain access and refresh tokens.
+  \item \verb|authorization_endpoint| — URL to initiate browser-based login.
+  \item \verb|device_authorization_endpoint| — URL to initiate a device
+        code login for CLI tools.
+  \item \verb|registration_endpoint| — URL for Dynamic Client Registration
+        (RFC~7591).
+  \item \verb|grant_types_supported| — List of supported grant types.
+  \item \verb|scopes_supported| — List of supported scopes.
+\end{itemize}
+
+
 Here there is an example of a \verb|discovery_url|:
 \begin{verbatim}
 {
   "issuer": "https://auth.example.org",
   "token_endpoint": "https://auth.example.org/oauth/token",
   "device_authorization_endpoint": "https://auth.example.org/oauth/device",
+  "registration_endpoint": "https://auth.example.org/oauth/register"
   "grant_types_supported": [
     "refresh_token",
     "urn:ietf:params:oauth:grant-type:device_code"
@@ -555,6 +572,7 @@ Here there is an example of a \verb|discovery_url|:
   "scopes_supported": ["openid", "email", "profile"]
 }
 \end{verbatim}
+
 
 Possible error codes are standardised on oAuth. A typical list of possible codes can
 be found in Table \ref{table:oAuthCodes}.
@@ -574,13 +592,24 @@ be found in Table \ref{table:oAuthCodes}.
 \label{table:oAuthCodes}
 \end{table}
 
+If a client does not already have a \verb|client_id|, it MUST obtain one via
+Dynamic Client Registration as described in RFC~7591. The URL of the
+registration endpoint is given in the \verb|registration_endpoint| field of
+the discovery document. Clients MUST NOT assume this value and MUST always
+obtain it from the advertised discovery metadata.
 
 \begin{description}
 \item{\textbf{Token acquisition:}
 
-Clients MUST use the Device Authorization Flow. This involves requesting a device code from the
-\verb|device_authorization_endpoint|, prompting the user to authenticate via a browser, and polling the
-\verb|token_endpoint| for completion.
+Clients MUST use the Device Authorization Flow. This involves requesting a device code from the \verb|device_authorization_endpoint|, prompting the user to authenticate via a browser, and polling the \verb|token_endpoint| for completion. The request MUST include the \verb|client_id| assigned at registration:
+
+\begin{lstlisting}[language=bash]
+curl -X POST https://auth.example.org/oauth/token \
+  -d 'grant_type=authorization_code' \
+  -d 'code=XYZ' \
+  -d 'redirect_uri=http://localhost:9999' \
+  -d 'client_id=my-client-id'
+\end{lstlisting}
 
 Upon success, the client receives:
 
@@ -589,9 +618,14 @@ Upon success, the client receives:
   "access_token": "abc123",
   "token_type": "Bearer",
   "expires_in": 3600,
-  "refresh_token": "xyz789"
+  "refresh_token": "xyz789",
+  "allowed_origins": ["https://example.org", "https://data.example.org"]
 }
 \end{verbatim}}
+
+If present, the \verb|allowed_origins| field (legacy VO mechanism) restricts the HTTP
+origins at which the token may be used. Clients MUST verify both the scope and
+the origin of usage.
 
 \item{{Using Tokens:} Access tokens must be included in the HTTP \texttt{Authorization} header:
 
@@ -666,22 +700,6 @@ Currently defined values are:
         These items are passed as the values of parameters
         ``{\tt username}'' and ``{\tt password}'' respectively,
         transmitted in {\tt application/x-www-form-urlencoded} format.
-  \item[{\tt ivo://ivoa.net/sso\#OAuth}]
-        This value indicates that the service requires OAuth 2.0-based authentication
-        using a Bearer token. The specific login mechanism is not directly specified by
-        this identifier and MUST be dynamically discovered via the discovery URL provided in the
-        \verb|access_url| parameter of the \texttt{WWW-Authenticate} challenge. Clients are expected
-        to follow the metadata discovery process defined in RFC 8414~\citep{rfc8414} to determine the supported
-        endpoints and authorisation server configuration.
-
-        In this profile, only the Device Authorization Flow, as defined in RFC 8628~\citep{rfc8628},
-        is supported. This enables headless or browserless clients—such as command-line tools or scripts—
-        to prompt the user to authenticate on a separate device with a browser.
-
-        Access and refresh tokens are acquired through the device and token endpoints
-        defined in the discovery document and must be included in subsequent requests
-        using the HTTP \texttt{Authorization} header with the Bearer scheme.
-
 \end{description}
 
 \todo{
@@ -1059,137 +1077,152 @@ content-type: text/xml
 </uws:jobs>
 \end{verbatim}
 }
-\subsection{OAuth Device Code Flow (RFC 8628)}
-\label{sec:ivoa-bearer-example}
+\subsection{Authentication Flow and Security Checks using Tokens}
+\label{sec:ivoa-bearer-flow}
 
-Command-line tools, batch scripts, or other headless clients often lack access to a browser, making typical
-OAuth flows like the Authorization Code Grant (which requires user interaction) unsuitable. The Device
-Authorization Grant (Denniss and Bradley, 2019) enables these clients to initiate the authentication process,
-prompting the user to complete login in a browser on a separate device.
+Command-line tools, batch scripts, or other headless clients often lack
+access to a browser, making typical OAuth flows unsuitable. The Device
+Authorization Grant (RFC~8628) enables these clients to initiate an
+authentication process where the user completes login on a separate
+device.
 
-This flow is particularly useful for environments where the client does not have graphical capabilities or where
-authentication must occur externally (e.g., via a mobile device or desktop browser).
+This section defines a unified flow including protocol steps and
+mandatory security checks for both clients and services.
 
-\subsubsection{Before Execution}
+\subsubsection{Step 1: Access Protected Resource}
 
-\begin{description}
-\item{\textbf{Receive Unauthorized Error}}
+A client attempts to access a protected resource without credentials:
 
-When an unauthenticated client attempts to access a protected resource, the server responds with:
+\begin{verbatim}
+GET /vo-resource
+\end{verbatim}
+
+The service MUST respond with an authentication challenge using HTTP
+(RFC~7235) and Bearer token semantics (RFC~6750):
 
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ivoa_bearer \
-  error="invalid_request", \
-  error_description="Missing access token", \
+WWW-Authenticate: ivoa_bearer
+  error="invalid_request",
+  error_description="Missing access token",
   discovery_url="https://auth.example.org/.well-known/openid-configuration"
 \end{verbatim}
 
-This indicates that a Bearer token is required. The client \textbf{MUST} fetch and parse the OpenID Connect Discovery
-document located at the \verb|discovery_url|.
+The client MUST parse the challenge and extract the
+\texttt{discovery\_url}. The client MUST NOT proceed without a valid
+\texttt{discovery\_url}.
 
-\item{\textbf{Extract Relevant Metadata}}
+\subsubsection{Step 2: Retrieve and Validate Discovery Document}
 
-From the discovery document \\
-(\texttt{https://auth.example.org/.well-known/openid-configuration}), \\
-the client retrieves the following fields:
+The client retrieves the discovery document (RFC~8414 or OpenID Connect Discovery):
 
+\begin{verbatim}
+GET https://auth.example.org/.well-known/openid-configuration
+\end{verbatim}
+
+\begin{verbatim}
+{
+  "issuer": "https://auth.example.org",
+  "token_endpoint": "https://auth.example.org/oauth/token",
+  "device_authorization_endpoint":
+    "https://auth.example.org/oauth/device",
+  "registration_endpoint":
+    "https://auth.example.org/oauth/register"
+}
+\end{verbatim}
+
+The client MUST:
 \begin{itemize}
-  \item{\verb|device_authorization_endpoint| — used to initiate the device authorisation flow.}
-  \item{\verb|token_endpoint| — used to poll for access tokens.}
-  \item{\verb|verification_uri| — the base URL shown to the user.}
-  \item{\verb|verification_uri_complete| — a direct link including the user code.}
-  \item{\verb|grant_types_supported| — must include \\
-  \verb|urn:ietf:params:oauth:grant-type:device_code|.}
-  \item{\verb|scopes_supported| — typically includes \verb|openid|, \verb|profile|, \verb|offline_access|.}
+\item validate that the document is retrieved via HTTPS,
+\item extract required endpoints,
+\item verify that the \texttt{issuer} matches the issuer returned in
+subsequent token responses (RFC~9207).
 \end{itemize}
 
-Example metadata:
+\textit{Note: The use of RFC~9207 (issuer identification in token
+responses) is optional, as it is not universally implemented. If
+present, it MUST be validated.}
+
+\subsubsection{Step 3: Dynamic Client Registration (Optional)}
+
+If a \texttt{registration\_endpoint} is provided, the client MUST register
+dynamically (RFC~7591):
+
+\begin{verbatim}
+POST https://auth.example.org/oauth/register
+{
+  "client_name": "VO CLI Tool",
+  "grant_types": [
+    "urn:ietf:params:oauth:grant-type:device_code"
+  ]
+}
+\end{verbatim}
+
+\begin{verbatim}
+{ "client_id": "my-client-id-123" }
+\end{verbatim}
+
+The client MUST include the obtained \texttt{client\_id} in subsequent
+requests. Dynamically registered clients MUST be treated as public
+clients.
+
+\subsubsection{Step 4: Request Device Code}
+
+The client initiates the device authorization flow (RFC~8628):
+
+\begin{verbatim}
+POST https://auth.example.org/oauth/device
+client_id=my-client-id&scope=openid profile
+\end{verbatim}
+
+The response includes:
 
 \begin{verbatim}
 {
-  "device_authorization_endpoint":
-                  "https://auth.example.org/oauth/device",
-  "token_endpoint": "https://auth.example.org/oauth/token",
+  "device_code": "abc123",
+  "user_code": "ABC-123",
   "verification_uri": "https://auth.example.org/activate",
   "verification_uri_complete":
-          "https://auth.example.org/activate?user_code=ABC-123",
-  "grant_types_supported": [
-    "urn:ietf:params:oauth:grant-type:device_code",
-    "refresh_token"
-  ],
-  "scopes_supported": ["openid", "profile", "offline_access"]
+    "https://auth.example.org/activate?user_code=ABC-123"
 }
 \end{verbatim}
 
-\item{\textbf{Dynamic Client Registration}}
-Before initiating the Device Authorization Flow, clients may need to dynamically register with the Authorization Server in order to obtain a \texttt{client\_id}.  
+\subsubsection{Step 5: User Authentication}
 
-This process is described in the OAuth 2.0 Dynamic Client Registration Protocol (RFC~\cite{rfc591}).
-
-\begin{verbatim}
-curl -X POST https://auth.example.org/oauth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "client_name": "My VO Tool",
-    "grant_types": ["urn:ietf:params:oauth:grant-type:device_code"],
-    "token_endpoint_auth_method": "none"
-  }'
-\end{verbatim}
-
-The server responds with a JSON object containing the newly assigned \texttt{client\_id} (and optionally a \texttt{client\_secret} if required):
+The client MUST instruct the user to authenticate:
 
 \begin{verbatim}
-{
-  "client_id": "my-client-id-123",
-  "client_secret": "optional-secret"
-}
+Please open https://auth.example.org/activate
+and enter the code: ABC-123
 \end{verbatim}
 
-The client MUST store the \texttt{client\_id} securely and reuse it for future sessions.  
-This ensures that scripts, tools, or applications can obtain valid credentials even if they are not pre-registered with the VO infrastructure.  
- 
-In practice, some infrastructures may pre-register a small set of trusted clients (e.g., TOPCAT or Astroquery), but in general the mechanism of RFC~\cite{rfc7591} ensures that any compliant client can obtain credentials.  
-This registration step precedes the Device Authorization Grant (RFC~\cite{rfc8628}) and provides the necessary \texttt{client\_id} for the subsequent requests.
+\textbf{Security Warning:} The client SHOULD clearly indicate the service
+requesting authentication and the issuer being used, to prevent phishing
+or token exfiltration attacks.
 
+\subsubsection{Step 6: Poll Token Endpoint with Resource Indicator}
 
-\item{\textbf{Request Device Code}}
-
-The client initiates the device flow:
+The client polls the token endpoint (RFC~6749, RFC~8628) and MAY include
+a resource indicator (RFC~8707) to request a token scoped to a specific
+service:
 
 \begin{verbatim}
-curl -X POST https://auth.example.org/oauth/device \
-     -d 'client_id=my-client-id&scope=openid profile'
+POST https://auth.example.org/oauth/token
+grant_type=urn:ietf:params:oauth:grant-type:device_code
+device_code=abc123
+client_id=my-client-id
+resource=https://data.example.org
 \end{verbatim}
 
-This URL is obtained from \verb|device_authorization_endpoint|.
+The \texttt{resource} parameter indicates the intended audience of the
+token. If supported, the Authorization Server will issue a token bound
+to that resource.
 
-\item{\textbf{Prompt User to Authenticate}}
+\textit{Note: The use of RFC~8707 (Resource Indicators) is optional, as
+it is not universally implemented. If supported, clients SHOULD use it
+to restrict token usage to the intended service.}
 
-The client displays a message like:
-
-\begin{verbatim}
-Please open
-https://auth.example.org/activate
-in a browser and enter the code: ABC-123
-\end{verbatim}
-
-Alternatively, the complete link from \verb|verification_uri_complete| can be shown directly.
-
-\item{\textbf{Poll for Token}}
-
-The client polls the token endpoint (from \verb|token_endpoint|):
-
-\begin{verbatim}
-curl -X POST https://auth.example.org/oauth/token \
-     -d 'grant_type=urn:ietf:params:oauth:grant-type:device_code' \
-     -d 'device_code=abc123' \
-     -d 'client_id=my-client-id'
-\end{verbatim}
-
-\item{\textbf{Receive Tokens}}
-
-After successful user authentication, the client receives:
+The response contains:
 
 \begin{verbatim}
 {
@@ -1200,38 +1233,59 @@ After successful user authentication, the client receives:
 }
 \end{verbatim}
 
-The tokens should be stored securely for future requests.
+The client MUST validate:
+\begin{itemize}
+\item the presence of an access token,
+\item the token type is \texttt{Bearer} (RFC~6750),
+\item the issuer if provided (RFC~9207, optional).
+\end{itemize}
 
-\item{\textbf{Use the Token}}
+\subsubsection{Step 7: Access Protected Resource with Token}
 
-The client accesses protected resources by including the access token in the \verb|Authorization| header:
+The client accesses the resource:
 
 \begin{verbatim}
 GET /vo-resource
 Authorization: Bearer SlAV32hkKG
 \end{verbatim}
 
-\end{description}
+The service MUST validate the token:
+\begin{itemize}
+\item verify signature if JWT-based (RFC~9068),
+\item check expiration,
+\item verify issuer,
+\item verify audience if present (e.g. matching the requested
+\texttt{resource}, RFC~8707).
+\end{itemize}
 
-\subsubsection{During Execution}
+\textit{Note: Audience validation (RFC~8707) is optional but strongly
+recommended when supported.}
 
-\begin{description}
-\item{\textbf{Token Refresh}}
+If validation fails, the service MUST reject the request.
 
-To maintain access for long-running jobs or recurring tasks, the client refreshes the token using:
+\subsubsection{Step 8: Token Refresh (Optional)}
+
+For long-running processes, the client MAY refresh the token (RFC~6749):
 
 \begin{verbatim}
-curl -X POST https://auth.example.org/oauth/token \
-     -d 'grant_type=refresh_token' \
-     -d 'refresh_token=xyz456' \
-     -d 'client_id=my-client-id'
+POST https://auth.example.org/oauth/token
+grant_type=refresh_token
+refresh_token=xyz456
+client_id=my-client-id
 \end{verbatim}
 
-This request is also sent to the \verb|token_endpoint|.
+Refresh tokens MUST be stored securely, as they provide persistent
+access.
 
-\textbf{Note:} Refresh tokens must be stored securely. If compromised, they provide persistent access to user resources.
-\end{description}
+\subsubsection{Security Considerations}
 
+\begin{itemize}
+\item Clients MUST NOT blindly trust discovery metadata.
+\item Services MUST validate token integrity and issuer.
+\item Clients MUST NOT reuse tokens across unrelated services.
+\item Implementations SHOULD restrict tokens to specific resources when
+supported.
+\end{itemize}
 \appendix
 \section{Changes from Previous Versions}
 
