@@ -17,6 +17,9 @@
 \author{Patrick Dowler}
 \author{Brian Major}
 \author{Jesus Salgado}
+\author{James Tocknell}
+\author{Adrian Damian}
+\author{Russ Allbery}
 
 \editor{Mark Taylor}
 
@@ -308,13 +311,15 @@ the credentials.
 Services using OAuth2 generally make use of the Bearer scheme.
 In this case the challenged client supplies a {\em bearer token}
 in subsequent requests,
-but the challenge provides no information about how to acquire
-such a token which means it is not suitable for clients lacking
+but the standard \verb|Bearer| challenge provides no information about how to
+acquire such a token, which means it is not suitable for clients lacking
 prior knowledge about the target service, as described in
-Section~\ref{sec:intro}. In order to allow those connections, the
-{\em bearer token} response should provide the service configuration
-metadata, usually contained in the \verb|discovery_url|.
-See \ref{sec:ivoa-bearer}.
+Section~\ref{sec:intro}. To support those clients, this document profiles the
+standard \verb|Bearer| scheme (Section~\ref{sec:ivoa-bearer}), whose challenge
+carries a pointer to a Protected Resource Metadata document (\rfc{9728}) from
+which the client can discover the authorization server, verify that it is
+entitled to issue tokens for this resource, and obtain a token whose audience
+is bound to the resource.
 
 
 Other methods of authentication over HTTP also exist
@@ -512,53 +517,109 @@ and is a normalised triple of URI scheme, hostname, and port.
 There is an example in Section~\ref{sec:x509-example}.
 
 
-\subsubsection{\mbox{\tt ivoa\_bearer}}\label{sec:ivoa-bearer}
+\subsection{Bearer Tokens}\label{sec:ivoa-bearer}
 
-The \verb|ivoa_bearer| authentication scheme enables Virtual Observatory (VO) services to request Bearer tokens
-for secure access control. This approach is aligned with OAuth 2.0 \citep{rfc6749} and OpenID Connect,
-offering a standards-compliant and interoperable solution for clients and services.
+VO services that require OAuth~2.0 (\rfc{6749}) access tokens use the standard
+\verb|Bearer| authentication scheme (\rfc{6750}) in their
+\header{WWW-Authenticate} challenges; this document does not define a
+VO-specific scheme for them. What it adds --- crucially for clients with no
+prior knowledge of the service --- is a profile that tells the client how to
+discover the authorization server and how to obtain a token that is safe to
+present to this particular resource, by combining the \verb|Bearer| scheme with
+the Protected Resource Metadata mechanism of \rfc{9728}.
 
-This scheme supports authentication for headless clients (e.g., command-line tools or scripts) via the Device Authorization Flow \citep{rfc8628}, enabling login through a secondary browser-enabled device.
+The scheme supports headless clients (e.g.\ command-line tools or scripts)
+through the Device Authorization Grant (\rfc{8628}), token expiry and renewal
+through refresh tokens, and zero-touch onboarding through Dynamic Client
+Registration (\rfc{7591}); it integrates with standard OAuth2/OIDC
+infrastructures.
 
-It also supports token expiry and renewal via refresh tokens, and integrates with OAuth2-compatible infrastructures such as Keycloak-based IAM services.
+A bare \verb|Bearer| challenge (\rfc{6750}) gives the client no way to discover
+where to obtain a token. Under this profile the challenge instead carries a
+\verb|resource_metadata| parameter (\rfc{9728}) pointing at a \emph{Protected
+Resource Metadata} (PRM) document: a small JSON document, served from the
+authorization server's own origin, that names the authorization server(s)
+entitled to issue tokens for this resource. This indirection is deliberate ---
+it is what lets the client confirm that the resource and the issuer genuinely
+belong together \emph{before} parting with any credentials or token
+(Section~\ref{sec:ivoa-bearer-flow}).
 
 \begin{description}
-\item{{Scheme name:} \verb|ivoa_bearer|}
-\item{\textbf{Parameters:}
-\begin{itemize}
-  \item \verb|discovery_url| (required): URL to a discovery document following RFC 8414, providing metadata such as supported grant types and endpoints.
-  \item \verb|error| (optional): OAuth 2.0-compatible error code, e.g., \verb|invalid_request|, \verb|invalid_token|, or \verb|expired_token|.
-  \item \verb|error_description| (optional): Human-readable explanation of the error condition.
-\end{itemize}}
+  \item[Scheme name:] \verb|Bearer| (\rfc{6750})
+  \item[Parameters:] \mbox{}
+  \begin{itemize}
+    \item \verb|resource_metadata| (required) --- the URL of the Protected
+          Resource Metadata document (\rfc{9728}) describing this resource.
+          It is an \emph{untrusted} pointer until the checks of
+          Section~\ref{sec:ivoa-bearer-flow} have passed, and MUST be served
+          over HTTPS.
+    \item \verb|error| (optional) --- an OAuth~2.0 error code, e.g.\
+          \verb|invalid_request|, \verb|invalid_token| or \verb|expired_token|.
+    \item \verb|error_description| (optional) --- a human-readable explanation
+          of the error condition.
+  \end{itemize}
+  \item[Login response:] an OAuth~2.0 access token of type \verb|Bearer|,
+        presented in the \header{Authorization} header of subsequent requests.
+  \item[Scope:] the resource named in the PRM document; the token's audience is
+        bound to that resource (see Section~\ref{sec:ivoa-bearer-flow}).
 \end{description}
 
-When a protected resource is accessed without valid authentication, the service responds with:
+When a protected resource is accessed without a valid token, the service
+responds with a 401 that carries \emph{only the pointer}, never the descriptor
+itself:
 
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ivoa_bearer \
-  discovery_url="https://auth.example.org/.well-known/openid-configuration", \
-  error="missing_token", \
-  error_description="Authentication required"
+WWW-Authenticate: Bearer
+  resource_metadata=
+    "https://iam.example.org/.well-known/oauth-protected-resource",
+  error="invalid_token",
+  error_description="Missing or invalid access token"
 \end{verbatim}
 
-The \verb|discovery_url| MUST point to a document conforming to RFC~8414 (OAuth
-2.0 Authorization Server Metadata) or OpenID Connect Discovery. It provides the
-necessary metadata for client configuration, including:
+The \verb|resource_metadata| URL MUST resolve to a Protected Resource Metadata
+document conforming to \rfc{9728}. Its key members are:
 
 \begin{itemize}
-  \item \verb|token_endpoint| — URL to obtain access and refresh tokens.
-  \item \verb|authorization_endpoint| — URL to initiate browser-based login.
-  \item \verb|device_authorization_endpoint| — URL to initiate a device
-        code login for CLI tools.
-  \item \verb|registration_endpoint| — URL for Dynamic Client Registration
-        (RFC~7591).
-  \item \verb|grant_types_supported| — List of supported grant types.
-  \item \verb|scopes_supported| — List of supported scopes.
+  \item \verb|resource| --- the canonical identifier of the protected resource.
+        The token's audience (\verb|aud|) is bound to this value, and every
+        protected URL it governs MUST be at or below it in the URL path.
+  \item \verb|authorization_servers| --- one or more issuer URLs entitled to
+        mint tokens for this resource. The client trusts an entry only after
+        the domain-proxy check of Section~\ref{sec:ivoa-bearer-flow}.
+  \item \verb|scopes_supported| --- the OAuth scopes the resource understands.
+  \item \verb|bearer_methods_supported| --- how the token may be presented;
+        \verb|header| denotes the \header{Authorization: Bearer} form.
 \end{itemize}
 
-Possible error codes are standardised on oAuth. A typical list of possible codes can
-be found in Table \ref{table:oAuthCodes}.
+A minimal PRM document looks like:
+
+\begin{verbatim}
+{
+  "resource": "https://data.example.org",
+  "authorization_servers": ["https://iam.example.org/"],
+  "scopes_supported": ["read"],
+  "bearer_methods_supported": ["header"]
+}
+\end{verbatim}
+
+From the issuer named in \verb|authorization_servers|, the client retrieves the
+Authorization Server Metadata (\rfc{8414}, or OpenID Connect Discovery), which
+provides the endpoints the flow needs:
+
+\begin{itemize}
+  \item \verb|token_endpoint| --- to obtain access and refresh tokens.
+  \item \verb|device_authorization_endpoint| --- to start a device-code login
+        for headless clients (\rfc{8628}).
+  \item \verb|registration_endpoint| --- for Dynamic Client Registration
+        (\rfc{7591}).
+  \item \verb|authorization_endpoint| --- to start a browser-based login.
+  \item \verb|grant_types_supported|, \verb|scopes_supported| --- the supported
+        grant types and scopes.
+\end{itemize}
+
+Error codes carried in the \verb|error| parameter are those standardised by
+OAuth~2.0; a representative subset is listed in Table~\ref{table:oAuthCodes}.
 \begin{table}[]
 \centering
 \begin{tabular}{ll}
@@ -1003,211 +1064,318 @@ content-type: text/xml
 \subsection{Authentication Flow and Security Checks using Tokens}
 \label{sec:ivoa-bearer-flow}
 
-Command-line tools, batch scripts, or other headless clients often lack
+Command-line tools, batch scripts, and other headless clients often lack
 access to a browser, making typical OAuth flows unsuitable. The Device
-Authorization Grant (RFC~8628) enables these clients to initiate an
-authentication process where the user completes login on a separate
-device.
+Authorization Grant (\rfc{8628}) lets such a client begin authentication and
+have the user complete the login on a separate, browser-capable device.
 
-This section defines a unified flow including protocol steps and
-mandatory security checks for both clients and services.
+This section defines the unified flow --- the protocol steps together with the
+mandatory security checks for both clients and services. The flow is built so
+that a client starting from nothing but a resource URL can: (a) discover the
+correct authorization server; (b) prove that the server and the resource belong
+together \emph{before} parting with any credentials; and (c) obtain a token
+bound to the target resource, so that the token is useless if leaked to a third
+party.
 
-\subsubsection{Step 1: Access Protected Resource}
+The central threat addressed is the ``evil service'': a malicious or
+compromised resource that answers a request with a 401 pointing at
+attacker-controlled metadata, hoping the client will obtain a token from a
+legitimate issuer and then present it to the attacker. The domain-proxy check
+(Step~3) and audience binding (Step~6) are what close this hole.
 
-A client attempts to access a protected resource without credentials:
+The following diagram summarises the exchange; a vertical bar is a participant
+and the numbered arrows are HTTP requests and responses:
+
+\begin{verbatim}
+ Client                 Resource server          Authz server + PRM
+ (headless)             data.example.org         iam.example.org
+   |                          |                          |
+   | 1 GET /vo-resource       |                          |
+   |------------------------->|                          |
+   |   401 Bearer,            |                          |
+   |   resource_metadata=...  |                          |
+   |<-------------------------|                          |
+   |                                                     |
+   | 2 GET <resource_metadata>   (PRM "sidecar")         |
+   |---------------------------------------------------->|
+   |   { resource, authorization_servers[], scopes }     |
+   |<----------------------------------------------------|
+   |                                                     |
+   | 3 DOMAIN-PROXY CHECK (local, MUST pass):            |
+   |     (a) origin(PRM) == origin(issuer)               |
+   |     (b) requested URL covered by "resource"         |
+   |                                                     |
+   | 4 GET <issuer> AS metadata (RFC 8414); verify iss   |
+   |---------------------------------------------------->|
+   |   { token_endpoint, device_authorization_endpoint } |
+   |<----------------------------------------------------|
+   |                                                     |
+   | 5 (if needed) register -> client_id (RFC 7591)      |
+   |<--------------------------------------------------->|
+   |                                                     |
+   | 6 device grant (RFC 8628); user approves in browser |
+   |   poll token_endpoint, resource=<resource>          |
+   |   -> access_token bound to aud=<resource>           |
+   |<--------------------------------------------------->|
+   |                          |                          |
+   | 7 GET /vo-resource, Authorization: Bearer <token>   |
+   |------------------------->| verify sig/iss/aud/      |
+   |   200 OK (data)          |        scope/exp         |
+   |<-------------------------|                          |
+\end{verbatim}
+
+\subsubsection{Step 1: Access the protected resource}
+
+The client requests the protected resource with no credentials:
 
 \begin{verbatim}
 GET /vo-resource
 \end{verbatim}
 
-The service MUST respond with an authentication challenge using HTTP
-(RFC~7235) and Bearer token semantics (RFC~6750):
+A protected service MUST respond with a 401 using HTTP authentication
+(\rfc{9110}) and the standard \verb|Bearer| scheme, carrying \emph{only} a pointer
+to the Protected Resource Metadata document:
 
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ivoa_bearer
-  error="invalid_request",
-  error_description="Missing access token",
-  discovery_url="https://auth.example.org/.well-known/openid-configuration"
+WWW-Authenticate: Bearer
+  resource_metadata=
+    "https://iam.example.org/.well-known/oauth-protected-resource",
+  error="invalid_token",
+  error_description="Missing access token"
 \end{verbatim}
 
-The client MUST parse the challenge and extract the
-\texttt{discovery\_url}. The client MUST NOT proceed without a valid
-\texttt{discovery\_url}.
+The service MUST NOT return the authoritative descriptor (issuer URL, endpoints,
+etc.) directly in the challenge; it returns only the \verb|resource_metadata|
+pointer. The client MUST extract that pointer and MUST NOT proceed without it.
+At this stage the pointer is \emph{untrusted}.
 
-\subsubsection{Step 2: Retrieve and Validate Discovery Document}
+\subsubsection{Step 2: Retrieve the Protected Resource Metadata}
 
-The client retrieves the discovery document (RFC~8414 or OpenID Connect Discovery):
+The client fetches the PRM document (\rfc{9728}) named by the pointer:
 
 \begin{verbatim}
-GET https://auth.example.org/.well-known/openid-configuration
+GET https://iam.example.org/.well-known/oauth-protected-resource
 \end{verbatim}
 
 \begin{verbatim}
 {
-  "issuer": "https://auth.example.org",
-  "token_endpoint": "https://auth.example.org/oauth/token",
-  "device_authorization_endpoint":
-    "https://auth.example.org/oauth/device",
-  "registration_endpoint":
-    "https://auth.example.org/oauth/register"
+  "resource": "https://data.example.org",
+  "authorization_servers": ["https://iam.example.org/"],
+  "scopes_supported": ["read"],
+  "bearer_methods_supported": ["header"]
 }
 \end{verbatim}
 
-The client MUST:
-\begin{itemize}
-\item validate that the document is retrieved via HTTPS,
-\item extract required endpoints,
-\item verify that the \texttt{issuer} matches the issuer returned in
-subsequent token responses (RFC~9207).
-\end{itemize}
+The client MUST retrieve this document over HTTPS and reads from it the
+\verb|resource| identifier and the \verb|authorization_servers| list. Both
+remain \emph{untrusted} until Step~3 succeeds.
 
-\textit{Note: The use of RFC~9207 (issuer identification in token
-responses) is optional, as it is not universally implemented. If
-present, it MUST be validated.}
+\subsubsection{Step 3: Domain-proxy check (MANDATORY)}
 
-\subsubsection{Step 3: Dynamic Client Registration (Optional)}
+This is the security core of the scheme. Before trusting the issuer named in the
+PRM, the client MUST verify \emph{two} gates, and MUST abort the flow if either
+fails:
 
-If a \texttt{registration\_endpoint} is provided, the client MUST register
-dynamically (RFC~7591):
+\begin{description}
+\item[Gate (a) --- same origin:] the origin of the \verb|resource_metadata| URL
+      (from which the PRM was fetched) MUST equal the origin of the issuer named
+      in \verb|authorization_servers|. \emph{Origin} is the normalised triple of
+      scheme, host and port (\rfc{9110}, section 4.3.1). A forged descriptor on
+      an attacker's host cannot satisfy this: only a document served from the
+      issuer's own origin can vouch for that issuer.
+\item[Gate (b) --- resource coverage:] the URL the client originally requested
+      MUST be covered by the \verb|resource| value, i.e.\ be equal to it or
+      below it at a path-segment boundary. This ensures the descriptor is
+      authoritative for the very resource being accessed, and not merely a valid
+      descriptor for some unrelated resource.
+\end{description}
+
+Co-locating the authorization server and the PRM document on a single origin is
+therefore a deployment requirement of this scheme. The \verb|resource| id that
+matched gate (b) is the audience the client will request in Step~6.
+
+\subsubsection{Step 4: Retrieve and validate Authorization Server metadata}
+
+Having established trust in the issuer, the client retrieves its metadata
+(\rfc{8414}, or OpenID Connect Discovery):
 
 \begin{verbatim}
-POST https://auth.example.org/oauth/register
+GET https://iam.example.org/.well-known/oauth-authorization-server
+\end{verbatim}
+
+\begin{verbatim}
+{
+  "issuer": "https://iam.example.org/",
+  "token_endpoint": "https://iam.example.org/token",
+  "device_authorization_endpoint": "https://iam.example.org/devicecode",
+  "registration_endpoint": "https://iam.example.org/register"
+}
+\end{verbatim}
+
+The client MUST retrieve the document over HTTPS, MUST verify that its
+\verb|issuer| value equals the issuer named in the PRM, and extracts the
+endpoints it needs. If the authorization server later returns an issuer
+identifier in token responses (\rfc{9207}), the client MUST verify that it
+matches as well.
+
+\textit{Note: \rfc{9207} (issuer identification in token responses) is optional,
+as it is not universally implemented; if present it MUST be validated.}
+
+\subsubsection{Step 5: Dynamic Client Registration (if needed)}
+
+If the client has no \verb|client_id| and a \verb|registration_endpoint| is
+advertised, it MUST register dynamically (\rfc{7591}):
+
+\begin{verbatim}
+POST https://iam.example.org/register
 {
   "client_name": "VO CLI Tool",
-  "grant_types": [
-    "urn:ietf:params:oauth:grant-type:device_code"
-  ]
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["urn:ietf:params:oauth:grant-type:device_code"]
 }
 \end{verbatim}
 
 \begin{verbatim}
-{ "client_id": "my-client-id-123" }
+{ "client_id": "s6BhdRkqt3" }
 \end{verbatim}
 
-The client MUST include the obtained \texttt{client\_id} in subsequent
-requests. Dynamically registered clients MUST be treated as public
-clients.
+The client MUST use the returned \verb|client_id| in subsequent requests.
+Dynamically registered clients MUST be treated as public clients (no client
+secret). Note that some authorization servers restrict which grant types a
+self-registered client may request --- for instance disallowing token exchange
+--- so clients SHOULD be prepared to obtain an audience-bound token directly in
+Step~6 rather than relying on a subsequent exchange.
 
-\subsubsection{Step 4: Request Device Code}
+\subsubsection{Step 6: Obtain an audience-bound token}
 
-The client initiates the device authorization flow (RFC~8628):
+The client starts the Device Authorization Grant (\rfc{8628}):
 
 \begin{verbatim}
-POST https://auth.example.org/oauth/device
-client_id=my-client-id&scope=openid profile
+POST https://iam.example.org/devicecode
+client_id=s6BhdRkqt3&scope=openid read
 \end{verbatim}
-
-The response includes:
 
 \begin{verbatim}
 {
-  "device_code": "abc123",
-  "user_code": "ABC-123",
-  "verification_uri": "https://auth.example.org/activate",
+  "device_code": "GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS",
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://iam.example.org/device",
   "verification_uri_complete":
-    "https://auth.example.org/activate?user_code=ABC-123"
+    "https://iam.example.org/device?user_code=WDJB-MJHT",
+  "expires_in": 600,
+  "interval": 5
 }
 \end{verbatim}
 
-\subsubsection{Step 5: User Authentication}
-
-The client MUST instruct the user to authenticate:
+The client MUST instruct the user to complete the login on the issuer's own
+page, displaying both the resource being accessed and the issuer being used:
 
 \begin{verbatim}
-Please open https://auth.example.org/activate
-and enter the code: ABC-123
+To authorize access to https://data.example.org, open
+https://iam.example.org/device and enter the code: WDJB-MJHT
 \end{verbatim}
 
-\textbf{Security Warning:} The client SHOULD clearly indicate the service
-requesting authentication and the issuer being used, to prevent phishing
-or token exfiltration attacks.
+\textbf{Security warning:} the client MUST make clear which service is
+requesting access and which issuer is being used, so the user can detect
+phishing or misdirection. The client never sees the user's credentials; they are
+entered only at the issuer.
 
-\subsubsection{Step 6: Poll Token Endpoint with Resource Indicator}
+The client then polls the token endpoint (\rfc{8628}), honouring the
+\verb|authorization_pending| and \verb|slow_down| signals, and MUST request that
+the token be bound to the resource matched in Step~3. Two mechanisms are
+defined:
 
-The client polls the token endpoint (RFC~6749, RFC~8628) and MAY include
-a resource indicator (RFC~8707) to request a token scoped to a specific
-service:
+\begin{itemize}
+  \item the resource indicator \verb|resource| (or \verb|aud|) parameter
+        (\rfc{8707}) on the device-grant token request --- the RECOMMENDED
+        approach, since it works for public, self-registered clients; or
+  \item a subsequent OAuth~2.0 Token Exchange (\rfc{8693}) that narrows the
+        audience of an already-issued token.
+\end{itemize}
 
 \begin{verbatim}
-POST https://auth.example.org/oauth/token
+POST https://iam.example.org/token
 grant_type=urn:ietf:params:oauth:grant-type:device_code
-device_code=abc123
-client_id=my-client-id
+device_code=GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS
+client_id=s6BhdRkqt3
 resource=https://data.example.org
 \end{verbatim}
 
-The \texttt{resource} parameter indicates the intended audience of the
-token. If supported, the Authorization Server will issue a token bound
-to that resource.
-
-\textit{Note: The use of RFC~8707 (Resource Indicators) is optional, as
-it is not universally implemented. If supported, clients SHOULD use it
-to restrict token usage to the intended service.}
-
-The response contains:
+On success the response carries a token whose audience is the target resource:
 
 \begin{verbatim}
 {
   "access_token": "SlAV32hkKG",
   "token_type": "Bearer",
   "expires_in": 3600,
-  "refresh_token": "xyz456"
+  "refresh_token": "8xLOxBtZp8"
 }
 \end{verbatim}
 
-The client MUST validate:
-\begin{itemize}
-\item the presence of an access token,
-\item the token type is \texttt{Bearer} (RFC~6750),
-\item the issuer if provided (RFC~9207, optional).
-\end{itemize}
+The client MUST verify that an access token is present and of type
+\verb|Bearer|.
 
-\subsubsection{Step 7: Access Protected Resource with Token}
+\textit{Note: \rfc{8707} (Resource Indicators) and \rfc{8693} (Token Exchange)
+may not be universally implemented; where neither is available the token cannot
+be audience-restricted, and the client SHOULD treat it as usable only with the
+service that issued the challenge.}
 
-The client accesses the resource:
+\subsubsection{Step 7: Access the protected resource with the token}
+
+The client retries the original request, now presenting the token:
 
 \begin{verbatim}
 GET /vo-resource
 Authorization: Bearer SlAV32hkKG
 \end{verbatim}
 
-The service MUST validate the token:
+Before returning any data, the service MUST validate the token:
 \begin{itemize}
-\item verify signature if JWT-based (RFC~9068),
-\item check expiration,
-\item verify issuer,
-\item verify audience if present (e.g. matching the requested
-\texttt{resource}, RFC~8707).
+\item if the token is a JWT, verify its signature against the issuer's
+      key set (\rfc{9068});
+\item verify the issuer (\verb|iss|) matches the expected authorization server;
+\item verify the audience (\verb|aud|) equals this resource's own identifier;
+\item verify any required scope is present;
+\item verify the token has not expired.
 \end{itemize}
 
-\textit{Note: Audience validation (RFC~8707) is optional but strongly
-recommended when supported.}
-
-If validation fails, the service MUST reject the request.
+If any check fails, the service MUST reject the request: 401 for a missing,
+invalid or expired token, or 403 for an authenticated request that lacks the
+required scope. On success it returns the protected resource.
 
 \subsubsection{Step 8: Token Refresh (Optional)}
 
-For long-running processes, the client MAY refresh the token (RFC~6749):
+For long-running processes, the client MAY refresh the token (\rfc{6749}):
 
 \begin{verbatim}
-POST https://auth.example.org/oauth/token
+POST https://iam.example.org/token
 grant_type=refresh_token
-refresh_token=xyz456
-client_id=my-client-id
+refresh_token=8xLOxBtZp8
+client_id=s6BhdRkqt3
 \end{verbatim}
 
-Refresh tokens MUST be stored securely, as they provide persistent
-access.
+When the original token was audience-bound, the refreshed token MUST be
+requested with the same audience. Refresh tokens MUST be stored securely, as
+they grant persistent access.
 
 \subsubsection{Security Considerations}
 
 \begin{itemize}
-\item Clients MUST NOT blindly trust discovery metadata.
-\item Services MUST validate token integrity and issuer.
-\item Clients MUST NOT reuse tokens across unrelated services.
-\item Implementations SHOULD restrict tokens to specific resources when
-supported.
+\item Clients MUST NOT trust the \verb|resource_metadata| pointer, the PRM
+      document, or the issuer it names until the domain-proxy check (Step~3) has
+      passed; a failed check MUST abort the flow.
+\item Services MUST return only the \verb|resource_metadata| pointer in the
+      challenge, and MUST serve the PRM document from the same origin as the
+      authorization server it names.
+\item Clients SHOULD obtain audience-bound tokens (Step~6) and MUST NOT reuse a
+      token across unrelated services: a token bound to one resource MUST NOT be
+      presented to another.
+\item Services MUST validate token integrity, issuer, audience, scope and
+      expiry (Step~7) before releasing any data.
+\item All discovery and token exchanges MUST take place over HTTPS.
+\item The client MUST present the resource and issuer identities to the user
+      before login, to mitigate phishing.
 \end{itemize}
 \appendix
 \section{Changes from Previous Versions}
