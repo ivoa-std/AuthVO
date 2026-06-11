@@ -16,3 +16,5 @@ role_diagram.svg
 
 # OS-specific
 .DS_Store
+.vscode/
+.devcontainer/
