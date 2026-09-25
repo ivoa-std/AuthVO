@@ -205,10 +205,6 @@ such discovery is done reactively.
 
 The following terms are used with specific meanings in this document:
 
-\todo{MT: Are these OK? Do they align with established usage?
-      Are there better choices?\\
-      BM: I haven't heard use of 'permit' before, but it seems like a
-      good choice to me.}
 \begin{description}
 \item[protected]
       A service or resource that can only be accessed by authenticated users,
@@ -221,7 +217,7 @@ The following terms are used with specific meanings in this document:
 \item[credentials]
       Secret information known to a user, such as a username and password,
       that can be used to acquire a {\em permit}
-\item[authentication domain]
+\item[domain]
       A set of HTTP endpoints sharing the same authentication arrangements;
       the same {\em permit\/} is applicable to all members of the same domain
       and should not be presented to endpoints outside that domain
@@ -355,10 +351,10 @@ Section~\ref{sec:common-params}:
 \verb|standard_id| for the credential submission method.
 
 
-\subsection{Scope}\label{sec:scope}
+\subsection{Domain}\label{sec:domain}
 
-A major consideration for these schemes is authentication scope,
-that is some rule about the domain (set of endpoints) within which an
+A major consideration for these schemes is authentication domain,
+that is some rule about the set of endpoints within which an
 acquired permit is valid.
 The permit is confidential information and so must not be leaked to services
 outside the domain.
@@ -368,11 +364,11 @@ multiple times where not necessary.
 The client may also be managing multiple permits
 for multiple different domains at once.
 So the permit must be delivered with sufficient
-implicit or explicit scoping
+implicit or explicit domain
 information for the client to tell for each subsequent request
 whether that permit should be presented,
 i.e.\ whether it falls within that permit's domain.
-The nature and form of this scoping information is scheme-specific.
+The nature and form of this domain information is scheme-specific.
 
 
 
@@ -401,7 +397,7 @@ and describes how to acquire such cookies.
           see Section~\ref{sec:standard-id}
   \end{itemize}
   \item[Login response:] \header{Set-Cookie} header
-  \item[Scope:] As defined by \rfc{6265}
+  \item[Domain:] As defined by \rfc{6265}
 \end{description}
 
 Cookies are text strings received in the {\tt Set-Cookie}
@@ -426,7 +422,7 @@ the client can present them in a \header{Cookie} header as defined
 by \rfc{6265} for subsequent requests to protected resources.
 If multiple cookies were received, they should all be presented.
 
-Cookies come with an associated scope, defined by the content
+Cookies come with an associated domain, defined by the content
 of the \header{Set-Cookie} header in conjunction with \rfc{6265},
 so compliant cookie-handling
 libraries are able to determine the domain for a given cookie.
@@ -463,7 +459,7 @@ Such authentication will succeed if the service trusts the signing CA.
   \end{itemize}
   \item[Login response (if used):] PEM-encoded X.509 certificate chain
                                    including private key
-  \item[Scope:] Origin of challenge URL
+  \item[Domain:] Origin of challenge URL
 \end{description}
 
 The \verb|ivoa_x509| challenge exists in two forms:
@@ -497,22 +493,12 @@ using public key cryptography, they cannot be stolen by third parties,
 so there are no security issues associated with attempting to use them
 to access services outside of the intended authentication domain.
 However using them for inapplicable services is inefficient and clumsy
-so some scoping is desirable.
+so some rule for domain determination is desirable.
 The authentication domain of a certificate acquired using this scheme is
 considered to be the {\em Origin\/} of the URL from which
 the challenge was received.
 Origin is defined by section 4.3.1 of \rfc{9110}
 and is a normalised triple of URI scheme, hostname, and port.
-
-\todo{
-  I've made up this tentative scoping rule for certificates
-  without wider consultation.
-  It's what the AUTH library currently does.
-  Could use Protection Space like Basic Auth instead of Origin,
-  which just aggregates a Realm with the Origin.
-  Realm is not currently one of the parameters of this scheme,
-  but it could be added if anybody thought it was worth while.
-}
 
 There is an example in Section~\ref{sec:x509-example}.
 
@@ -560,7 +546,7 @@ belong together \emph{before} parting with any credentials or token
   \end{itemize}
   \item[Login response:] an OAuth~2.0 access token of type \verb|Bearer|,
         presented in the \header{Authorization} header of subsequent requests.
-  \item[Scope:] the resource named in the PRM document; the token's audience is
+  \item[Domain:] the resource named in the PRM document; the token's audience is
         bound to that resource (see Section~\ref{sec:ivoa-bearer-flow}).
 \end{description}
 
