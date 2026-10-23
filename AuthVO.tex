@@ -43,7 +43,7 @@ resources.
 \end{abstract}
 
 
-\section*{Acknowledgments}
+% \section*{Acknowledgments}
 
 
 \section*{Conformance-related definitions}
@@ -115,35 +115,30 @@ or saved in an earlier session, or obtained from an unrelated application;
 in other words the application requiring the resource at a URL may
 have no information about the VO service which produced that URL.
 Then the only opportunity to acquire information about how to authenticate
-is by examining the URL itself, or by HTTP communications with that URL.
+is by examining the URL itself, or by HTTP communications with that URL,
+where authentication requirements are reported using the standard
+challenge/response framework reviewed in Section~\ref{sec:challenge-response}.
 
 An authentication method like HTTP Basic (\rfc{7617})
-can be used in this scenario,
+can be used straightforwardly in this scenario,
 since all negotiation involving user credentials and permits ---
 request and supply of username and password ---
 is done directly
 over the HTTP connection from which the resource is requested.
+
 More modern/secure/flexible authentication methods however tend to
-rely on additional interaction with other, unspecified, endpoints
-prior to the request itself.  For instance OAuth2 requires presentation
-of a Bearer Token to retrieve protected resources from a given URL,
-but there is no way given only that URL to determine where or how
-to acquire this token;
-in a typical OAuth2 usage scenario such information is known up front
-by the components making the request.
-
-No industry standard mechanism appears to exist to solve the
-problem of how a client can authenticate without such up-front
-information.
-This document therefore proposes some VO-standard mechanisms
-by which a service can advertise to clients all the information
-required to authenticate,
-in particular how to exchange user credentials for an authentication permit,
-given only the URL for a suitably compliant protected resource.
-
-To address this, this document defines (Section~\ref{sec:authschemes})
-some VO-specific authentication schemes
-for use in \header{WWW-Authenticate} challenges.
+rely on additional prior interaction with other endpoints
+distinct from the resource location itself.
+Industry standard mechanisms enabling clients to discover
+these interaction requirements
+in absence of out-of-band information tend to be lacking or non-obvious.
+This document explains in Section~\ref{sec:authschemes}
+how services can be configured to permit such discovery.
+In the case of Bearer Tokens this is done by prescribing a profile
+of existing industry standards to enable it (Section~\ref{sec:ivoa-bearer}),
+and in the case of cookie and certificate use it is done by
+defining a non-standard authentication challenge by which
+services can supply the missing information (Section~\ref{sec:voschemes}).
 It also describes (Section~\ref{sec:cr-use}) how to discover the
 authentication requirements for VO services, and
 some arrangements for working with optional authentication.
@@ -159,7 +154,7 @@ in a broader range of scenarios.
 VO services however are not required to use any of the
 mechanisms proposed in this document; if they can establish the
 client interoperability they require using other mechanisms, or
-a combination of VO and other mechansisms, they are free to do so.
+a combination of VO and other mechanisms, they are free to do so.
 
 Given that, as explained above,
 the VOResource record can only be discovered in some (TAP-like)
@@ -167,8 +162,8 @@ and not other (DataLink-like) authentication scenarios,
 it is no longer recommended to base discovery of authentication methods
 on the {\tt securityMethod} element
 defined by VOResource, as described by SSO 2.0.
-Instead, the proposal here is recommended for both TAP-like and DataLink-like
-scenarios.
+Instead, the challenge/response-based approach described here
+should be used for both TAP-like and DataLink-like scenarios.
 
 \subsection{Role within the VO Architecture}
 
@@ -230,16 +225,19 @@ The following terms are used with specific meanings in this document:
 \end{description}
 The terms {\em challenge\/} and {\em authentication scheme} are
 defined by \rfc{9110}
-and explained further in Section~\ref{sec:challenge-response}.
+and explained further in Section~\ref{sec:challenge-response-details}.
 
 
 \section{Challenge and Response}
+\label{sec:challenge-response}
 
 The standard way to negotiate authentication over HTTP is using
 authentication challenges supplied in HTTP responses.
+This challenge/response framework forms the basis for the
+authentication behaviour recommended by this document.
 
 \subsection{Challenge/Response Framework}
-\label{sec:challenge-response}
+\label{sec:challenge-response-details}
 
 The basics of authentication over HTTP can be found in
 section 11 of \rfc{9110} \citep{std:RFC9110};
@@ -269,16 +267,11 @@ the basics are outlined here:
         \verb|   WWW-Authenticate: <challenge> [<challenge> ...]|
 \end{itemize}
 
-\todo{
-   Do we need to worry about 407 and proxy-authenticate?
-   I don't {\em think\/} so.
-}
-
 The details of a number of these authentication schemes
 (\verb|<auth-scheme-name>| strings and their
 associated parameters and semantics)
 are defined in IETF documents, for instance
-``{\tt basic}'' (\rfc{7617} \citet{std:RFC7617})
+``{\tt basic}'' (\rfc{7617} \citet{std:RFC7617}),
 ``{\tt digest}'' (\rfc{7616} \citet{std:RFC7616})
 and
 ``{\tt bearer}'' (\rfc{6750} \citet{std:RFC6750}).
@@ -295,7 +288,8 @@ but it does not say that they MUST be so registered.
 Where one of the standard authentication schemes is
 suitable for use by a particular VO service and its clients,
 it should be used.
-For instance Basic or Digest authentication provide all required
+For instance Basic (\rfc{7617}) or Digest (\rfc{7616}) authentication
+provide all required
 information about the authentication procedure within the headers,
 since the client simply supplies
 (somewhat obscured) username and password
@@ -307,7 +301,7 @@ the credentials.
 Services using OAuth2 generally make use of the Bearer scheme.
 In this case the challenged client supplies a {\em bearer token}
 in subsequent requests,
-but the standard \verb|Bearer| challenge provides no information about how to
+but a usual \verb|Bearer| challenge provides no information about how to
 acquire such a token, which means it is not suitable for clients lacking
 prior knowledge about the target service, as described in
 Section~\ref{sec:intro}. To support those clients, this document profiles the
@@ -317,15 +311,13 @@ which the client can discover the authorization server, verify that it is
 entitled to issue tokens for this resource, and obtain a token whose audience
 is bound to the resource.
 
-
 Other methods of authentication over HTTP also exist
 and are used by VO services,
 for instance use of cookies and of X.509 certificates.
-In standard usage these do not use \header{WWW-Authenticate} challenges,
+In standard usage these do not present \header{WWW-Authenticate} challenges,
 and again prior knowledge about the service
 (how to acquire a suitable cookie or certificate)
 is required by the client to use them.
-
 This document defines in \ref{sec:voschemes}
 some VO-specific authentication schemes
 that solve these problems by supplying the missing information to
@@ -340,27 +332,17 @@ generally define:
         to a service --- this is defined by the identity of the scheme
   \item How they are to acquire such a permit ---
         this is communicated by the scheme-specific parameters
+  \item The {\em authentication domain\/}, i.e.\ at which endpoints the permit
+        should be used --- this is determined in a scheme-specific way
 \end{enumerate}
-Acquiring a permit (such as a cookie, certificate or token)
-typically requires supplying credentials known to the user
-(such as a username and password) in a particular way to a particular
-endpoint.
-Common parameters describing this activity are given in
-Section~\ref{sec:common-params}:
-\verb|access_url| for the credential submission endpoint and
-\verb|standard_id| for the credential submission method.
 
-
-\subsection{Domain}\label{sec:domain}
-
-A major consideration for these schemes is authentication domain,
-that is some rule about the set of endpoints within which an
-acquired permit is valid.
+The last of these, the rule about the set of endpoints within which
+an acquired permit is valid, needs careful consideration.
 The permit is confidential information and so must not be leaked to services
-outside the domain.
-But users may want to access multiple resources within the same domain
-and should not be made to present their credentials
-multiple times where not necessary.
+outside the domain,
+but existing permits should be used for all endpoints within their domain
+so that the user is not made to present their credentials multiple times
+unnecessarily.
 The client may also be managing multiple permits
 for multiple different domains at once.
 So the permit must be delivered with sufficient
@@ -374,9 +356,12 @@ The nature and form of this domain information is scheme-specific.
 
 \subsection{VO-Specific Scheme Definitions}\label{sec:voschemes}
 
-This section describes some custom Authentication Schemes
+This section defines some custom Authentication Schemes
 for use in \header{WWW-Authenticate} challenges,
 intended for use within the VO.
+The purpose of these is to advertise usage information to VO clients
+about a standard authentication method in use
+(currently, cookies or certificates).
 
 % mboxes required to stop TtL barfing on underscores
 \subsubsection{\mbox{\tt ivoa\_cookie}}\label{sec:ivoa-cookie}
@@ -387,14 +372,12 @@ and describes how to acquire such cookies.
 
 \begin{description}
   \item[Scheme name:] \verb|ivoa_cookie|
-  \item[Parameters:] \mbox{}
+  \item[Parameters:] (see Section~\ref{sec:common-params})
   \begin{itemize}
     \item \verb|access_url| (required) ---
-          indicates where to get the cookie,
-          see Section~\ref{sec:access-url}
+          indicates where to get the cookie
     \item \verb|standard_id| (required) ---
-          indicates how to authenticate at \verb|access_url|,
-          see Section~\ref{sec:standard-id}
+          indicates how to authenticate at \verb|access_url|
   \end{itemize}
   \item[Login response:] \header{Set-Cookie} header
   \item[Domain:] As defined by \rfc{6265}
@@ -412,7 +395,8 @@ but this is now deprecated and rarely used.
 
 To use this scheme, the client must present a username and password
 to the endpoint given by the \verb|access_url| parameter,
-in the form defined by the \verb|standard_id| parameter.
+in the form defined by the \verb|standard_id| parameter
+(see Section~\ref{sec:common-params}).
 If authentication is successful, a 200 OK response must be returned
 including a \header{Set-Cookie} header containing one or more cookies
 suitable as an authentication permit.
@@ -448,14 +432,12 @@ Such authentication will succeed if the service trusts the signing CA.
 
 \begin{description}
   \item[Scheme name:] \verb|ivoa_x509|
-  \item[Parameters:] \mbox{}
+  \item[Parameters:] (see Section~\ref{sec:common-params})
   \begin{itemize}
     \item \verb|access_url| (optional) ---
-          indicates where to get a suitable certificate,
-          see Section~\ref{sec:access-url}
-    \item \verb|standard_id| (required iff \verb|access_url| is present) ---
-          indicates how to authenticate at \verb|access_url|,
-          see Section~\ref{sec:standard-id}
+          indicates where to get a suitable certificate
+    \item \verb|standard_id| (required if \verb|access_url| is present) ---
+          indicates how to authenticate at \verb|access_url|
   \end{itemize}
   \item[Login response (if used):] PEM-encoded X.509 certificate chain
                                    including private key
@@ -476,7 +458,8 @@ If the client does not hold any such certificate,
 and the \verb|access_url|/\verb|standard_id| pair is present,
 it may obtain one by presenting credentials
 to the endpoint given by the \verb|access_url| parameter,
-in the form defined by the \verb|standard_id| parameter.
+in the form defined by the \verb|standard_id| parameter
+(see Section~\ref{sec:common-params}).
 If authentication is successful, a 200 OK response must be returned
 whose body is an X.509 certificate chain including its private key,
 in PEM format.  The \header{Content-Type} header of this response
@@ -501,6 +484,45 @@ Origin is defined by section 4.3.1 of \rfc{9110}
 and is a normalised triple of URI scheme, hostname, and port.
 
 There is an example in Section~\ref{sec:x509-example}.
+
+\subsubsection{Common Challenge Parameters for VO-Specific Schemes}
+\label{sec:common-params}
+
+The VO-specific authentication schemes described in
+Section~\ref{sec:voschemes}
+rely on a stage where the user ``logs in'' by exchanging
+credentials (a username and password) for a permit.
+This section defines common challenge parameters that
+tell the client exactly where and how to present these credentials.
+
+\begin{description}
+\item[{\tt access\_url}:]
+  The \verb|access_url| parameter reports where to log in:
+  the value is the endpoint at which
+  exchange of user credentials for a permit
+  takes place.
+%
+\item[{\tt standard\_id}:]
+  The \verb|standard_id| parameter explains how to log in:
+  it defines the protocol for exchanging user credentials
+  for a permit.
+  Username and password are supplied in the HTTP request as described below,
+  and the response returns a scheme-specific permit.
+  Currently defined values are:
+  \begin{description}
+    \item[{\tt ivo://ivoa.net/sso\#BasicAA}]
+          The Basic Authentication scheme defined by \rfc{7617} is used to
+          authenticate.
+          It is STRONGLY RECOMMENDED to use this over HTTPS not HTTP,
+          since the username and password are transmitted without encryption.
+    \item[{\tt ivo://ivoa.net/sso\#tls-with-password}]
+          The username and password are presented using a POST request
+          over an HTTPS connection.
+          These items are passed as the values of parameters
+          ``{\tt username}'' and ``{\tt password}'' respectively,
+          transmitted in {\tt application/x-www-form-urlencoded} format.
+  \end{description}
+\end{description}
 
 
 \subsection{Bearer Tokens}\label{sec:ivoa-bearer}
@@ -544,8 +566,6 @@ belong together \emph{before} parting with any credentials or token
     \item \verb|error_description| (optional) --- a human-readable explanation
           of the error condition.
   \end{itemize}
-  \item[Login response:] an OAuth~2.0 access token of type \verb|Bearer|,
-        presented in the \header{Authorization} header of subsequent requests.
   \item[Domain:] the resource named in the PRM document; the token's audience is
         bound to that resource (see Section~\ref{sec:ivoa-bearer-flow}).
 \end{description}
@@ -629,56 +649,6 @@ the discovery document. Clients MUST NOT assume this value and MUST always
 obtain it from the advertised discovery metadata. See 
 \ref{sec:ivoa-bearer-flow} for flow and security details.
 
-\subsection{Common Challenge Parameters for VO Schemes}
-\label{sec:common-params}
-
-Authentication schemes described in Section~\ref{sec:voschemes}
-rely on a stage where the user ``logs in'' by exchanging
-% secret credentials, but so far always...
-credentials (a username and password) for a permit.
-This section defines scheme parameters that
-tell the client exactly where and how to present these credentials.
-The content of the response is scheme-specific.
-
-\subsubsection{\mbox{\tt access\_url}}
-\label{sec:access-url}
-
-This parameter reports where to log in:
-the value is the endpoint at which
-exchange of user credentials for a permit
-takes place.
-
-\subsubsection{\mbox{\tt standard\_id}}
-\label{sec:standard-id}
-
-This parameter explains how to log in:
-it defines the protocol for exchanging user credentials
-for a permit.
-Username and password are supplied in the HTTP request as described below,
-and the response returns a scheme-specific permit.
-Currently defined values are:
-
-\begin{description}
-  \item[{\tt ivo://ivoa.net/sso\#BasicAA}]
-        The Basic Authentication scheme defined by \rfc{7617} is used to
-        authenticate.
-        It is STRONGLY RECOMMENDED to use this over HTTPS not HTTP,
-        since the username and password are transmitted without encryption.
-  \item[{\tt ivo://ivoa.net/sso\#tls-with-password}]
-        The username and password are presented using a POST request
-        over an HTTPS connection.
-        These items are passed as the values of parameters
-        ``{\tt username}'' and ``{\tt password}'' respectively,
-        transmitted in {\tt application/x-www-form-urlencoded} format.
-\end{description}
-
-\todo{
-  These {\tt standard\_id} values are defined by
-  the (obsolete?) SSO 2.0 standard.
-  It would make more sense if they were owned by this document,
-  but at time of writing these values are already in use in
-  (a few) deployed services, so it could be painful to change them.
-}
 
 \section{Challenge/Response Use in the VO}
 \label{sec:cr-use}
@@ -801,8 +771,6 @@ It is therefore RECOMMENDED that services include the header
 authenticated identity, in all responses to an authenticated client,
 and especially in response to any intial authentication attempt.
 Responses to unauthenticated clients MUST NOT contain this header.
-
-\todo{Or should this header only be required for initial login?}
 
 
 \subsection{Compatibility with other VO Standards}
@@ -936,7 +904,7 @@ is available.
 We choose to authenticate.
 The \verb|ivoa_cookie| challenge is recognised (Section~\ref{sec:ivoa-cookie})
 with \verb|standard_id| of \verb|tls-with-password|
-(Section~\ref{sec:standard-id}),
+(Section~\ref{sec:common-params}),
 so transmit user credentials
 by POSTing \verb|username| and \verb|password| parameters
 to the \verb|access_url|:
@@ -1008,7 +976,7 @@ Without having such a certificate however we can use
 the parameterised \verb|ivoa_x509| challenge
 (Section~\ref{sec:ivoa-x509}) which advises one way to acquire
 a suitable certificate.
-It has a \verb|standard_id| of \verb|BasicAA| (Section~\ref{sec:standard-id})
+It has a \verb|standard_id| of \verb|BasicAA| (Section~\ref{sec:common-params})
 so we transmit user credentials using
 HTTP Basic Authentication to the \verb|access_url|:
 
