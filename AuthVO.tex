@@ -560,8 +560,9 @@ sent (Section~\ref{sec:ivoa-bearer-flow}).
   \item[Parameters:] \mbox{}
   \begin{itemize}
     \item \verb|resource_metadata| (required) --- the URL of the Protected
-          Resource Metadata document (\rfc{9728}) of this resource, at the
-          well-known location defined in \rfc{9728} section 3.
+          Resource Metadata document (\rfc{9728}) that describes the
+          requested resource. It is the well-known location of
+          \rfc{9728} section 3.1, derived from the requested URL.
           It MUST be served over HTTPS, and the document it points to is
           \emph{untrusted} until the checks of
           Section~\ref{sec:ivoa-bearer-flow} have passed.
@@ -572,10 +573,12 @@ sent (Section~\ref{sec:ivoa-bearer-flow}).
     \item \verb|error_description| (optional) --- a human-readable explanation
           of the error condition.
   \end{itemize}
-  \item[Domain:] the resource identifier named in the PRM document, together
-        with the URLs below it (Section~\ref{sec:ivoa-bearer-as}); where the
-        token is audience-bound, its audience is that resource
-        (see Section~\ref{sec:ivoa-bearer-flow}).
+  \item[Domain:] the resource identifiers listed in the
+        \verb|protected_resources| member of the authorization server's
+        metadata, together with all the resources they cover
+        (Section~\ref{sec:ivoa-bearer-as}); where the token is
+        audience-restricted, its audience is one or more of those identifiers
+        (see Section~\ref{sec:ivoa-bearer-flow}, Step~5).
 \end{description}
 
 When a protected resource is accessed without any token, the service
@@ -583,12 +586,12 @@ responds with a 401 that carries \emph{only the pointer}, never the descriptor
 itself. Since the request carried no authentication information, the challenge
 carries no error information either (\rfc{6750} section 3.1):
 
-{\small
+{\footnotesize
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
 WWW-Authenticate: Bearer
   resource_metadata=
-    "https://data.example.org/.well-known/oauth-protected-resource/vo"
+  "https://vo.example.org/.well-known/oauth-protected-resource/tap/async/42"
 \end{verbatim}
 }
 
@@ -596,12 +599,12 @@ When the request carried a token that is invalid or has expired, the
 challenge adds the \verb|error| parameter, together with the same pointer so
 that the client can obtain a new token:
 
-{\small
+{\footnotesize
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
 WWW-Authenticate: Bearer
   resource_metadata=
-    "https://data.example.org/.well-known/oauth-protected-resource/vo",
+  "https://vo.example.org/.well-known/oauth-protected-resource/tap/async/42",
   error="invalid_token",
   error_description="The access token expired"
 \end{verbatim}
@@ -612,9 +615,10 @@ document conforming to \rfc{9728}, published by the protected resource. Its key
 members are:
 
 \begin{itemize}
-  \item \verb|resource| --- the identifier of the protected resource. It MUST
-        cover the URL whose request produced the challenge, as defined in
-        Section~\ref{sec:ivoa-bearer-as}.
+  \item \verb|resource| --- the identifier of the protected resource. As
+        \rfc{9728} section 3.3 requires, it MUST be identical to the URL whose
+        request produced the challenge, including any query component; a
+        client MUST NOT use the document otherwise.
   \item \verb|authorization_servers| --- one or more issuer identifiers of the
         authorization servers for this resource. The client trusts an entry
         only after confirming the resource against that server's own metadata
@@ -624,11 +628,12 @@ members are:
         \verb|header| denotes the \header{Authorization: Bearer} form.
 \end{itemize}
 
-A minimal PRM document looks like:
+A minimal PRM document, for a request to
+\url{https://vo.example.org/tap/async/42}, looks like:
 
 \begin{verbatim}
 {
-  "resource": "https://data.example.org/vo",
+  "resource": "https://vo.example.org/tap/async/42",
   "authorization_servers": ["https://iam.example.org/"],
   "scopes_supported": ["read"],
   "bearer_methods_supported": ["header"]
@@ -701,27 +706,47 @@ resource from one that merely names the authorization server in its PRM. If
 the same metadata is also published as an OpenID Connect Discovery document,
 the member SHOULD be included there as well.
 
-A resource identifier, whether in \verb|protected_resources| or in the
-\verb|resource| member of a PRM document, \emph{covers} a URL if the URL is
-equal to it, or has the same scheme, host and port and a path that extends it
-at a path-segment boundary. For instance, the identifier
-{\tt https://data.example.org/vo}:
+An identifier listed in \verb|protected_resources| \emph{covers} a URL if the
+URL is equal to it, or has the same scheme, host and port and a path that
+extends it at a path-segment boundary; any query component of the URL is
+ignored. For instance, the identifier \url{https://vo.example.org/tap}:
 \begin{itemize}
-  \item covers {\tt https://data.example.org/vo/tap/async/123};
-  \item does not cover {\tt https://data.example.org/vocab}.
+  \item covers \url{https://vo.example.org/tap/async/42};
+  \item covers \url{https://vo.example.org/tap/sync} with any query;
+  \item does not cover \url{https://vo.example.org/tapdocs}.
 \end{itemize}
-This relaxes the exact match required by \rfc{9728} section 3.3,
-so that one identifier can govern a whole service whose endpoints
-have variable paths. A client that applies \rfc{9728} section 3.3 to the
-letter will therefore reject such a PRM when the challenge came from a URL
-below the identifier: this profile needs clients that implement the coverage
-rule above.
+The identifiers listed in \verb|protected_resources|, together with all the
+URLs they cover, form the authentication domain of the authorization server:
+the set of resources to which a client may present a token obtained from it.
+Coverage applies only to these entries. The \verb|resource| member of a PRM
+document is not compared by coverage but, as \rfc{9728} section 3.3 requires,
+must be identical to the requested URL (Section~\ref{sec:ivoa-bearer-flow},
+Step~2), so clients that implement \rfc{9728} as written can follow this
+profile unchanged.
 
-Authorization servers SHOULD reject a token request whose \verb|resource|
-parameter (\rfc{8707}~\citep{std:RFC8707}) is not covered by an entry of their
+Authorization servers SHOULD reject a request whose \verb|resource|
+parameters (\rfc{8707}~\citep{std:RFC8707}) are not all entries of their
 \verb|protected_resources|, with the \verb|invalid_target| error defined in
 \rfc{8707} section 2, and SHOULD issue tokens whose audience is restricted
-to the requested resource (Section~\ref{sec:ivoa-bearer-flow}, Step~5).
+to the requested entries (Section~\ref{sec:ivoa-bearer-flow}, Step~5).
+
+{\itshape Note (non-normative): serving the PRM.
+Because the PRM {\tt resource} must equal the requested URL, a service whose
+URLs vary, such as a TAP service with asynchronous jobs or a DataLink service
+taking an {\tt ID} parameter, cannot publish a single static PRM file.
+Instead it generates the document per request: one handler, typically a rule
+in the web server or reverse proxy in front of the service, answers every
+path below \url{/.well-known/oauth-protected-resource/} that belongs to the
+service and
+returns the same {\tt authorization\_servers} and other members each time,
+with {\tt resource} set to the URL it is asked about, query included. Nothing
+is registered per URL: the authorization server still lists one identifier
+per service in {\tt protected\_resources}. On a host shared by several
+services or projects, possibly with different authorization servers, each
+service handles the well-known paths under its own path (\rfc{9728} section
+3.1); identifiers that cover a whole shared host should not be listed in
+{\tt protected\_resources}, since they would let one tenant's token be
+presented to another tenant's services.}
 
 {\itshape Note (non-normative): audience restriction in practice.
 Not all authorization servers implement these recommendations. For instance,
@@ -1150,9 +1175,9 @@ and the numbered arrows are HTTP requests and responses:
 
 \begin{verbatim}
  Client                 Resource server          Authz server
- (headless)             data.example.org         iam.example.org
+ (headless)             vo.example.org           iam.example.org
    |                          |                          |
-   | 1 GET /vo/resource       |                          |
+   | 1 GET /tap/async/42      |                          |
    |------------------------->|                          |
    |   401 Bearer,            |                          |
    |   resource_metadata=...  |                          |
@@ -1163,7 +1188,7 @@ and the numbered arrows are HTTP requests and responses:
    |   { resource,            |                          |
    |     authorization_servers[] }                       |
    |<-------------------------|                          |
-   |   check: requested URL covered by "resource"        |
+   |   check: "resource" == requested URL                |
    |                                                     |
    | 3 GET <issuer> AS metadata (RFC 8414, no redirects) |
    |---------------------------------------------------->|
@@ -1177,11 +1202,11 @@ and the numbered arrows are HTTP requests and responses:
    |<--------------------------------------------------->|
    |                                                     |
    | 5 device grant (RFC 8628); user approves in browser |
-   |   poll token_endpoint, resource=<resource>          |
-   |   -> access_token, preferably aud=<resource>        |
+   |   resource=<protected_resources entry(ies)>         |
+   |   -> access_token, preferably aud=<entry(ies)>      |
    |<--------------------------------------------------->|
    |                          |                          |
-   | 6 GET /vo/resource, Authorization: Bearer <token>   |
+   | 6 GET /tap/async/42, Authorization: Bearer <token>  |
    |------------------------->| verify sig/iss/aud/      |
    |   200 OK (data)          |        scope/exp         |
    |<-------------------------|                          |
@@ -1192,8 +1217,8 @@ and the numbered arrows are HTTP requests and responses:
 The client requests the protected resource with no credentials:
 
 \begin{verbatim}
-GET /vo/resource
-Host: data.example.org
+GET /tap/async/42
+Host: vo.example.org
 \end{verbatim}
 
 A protected service MUST respond with a 401 using HTTP authentication
@@ -1201,12 +1226,12 @@ A protected service MUST respond with a 401 using HTTP authentication
 to its Protected Resource Metadata document. As the request carried no token,
 the challenge carries no \verb|error| parameter (\rfc{6750} section 3.1):
 
-{\small
+{\footnotesize
 \begin{verbatim}
 HTTP/1.1 401 Unauthorized
 WWW-Authenticate: Bearer
   resource_metadata=
-    "https://data.example.org/.well-known/oauth-protected-resource/vo"
+  "https://vo.example.org/.well-known/oauth-protected-resource/tap/async/42"
 \end{verbatim}
 }
 
@@ -1219,15 +1244,14 @@ At this stage the pointer is \emph{untrusted}.
 
 The client fetches the PRM document (\rfc{9728}) named by the pointer:
 
-{\small
 \begin{verbatim}
-GET https://data.example.org/.well-known/oauth-protected-resource/vo
+GET /.well-known/oauth-protected-resource/tap/async/42
+Host: vo.example.org
 \end{verbatim}
-}
 
 \begin{verbatim}
 {
-  "resource": "https://data.example.org/vo",
+  "resource": "https://vo.example.org/tap/async/42",
   "authorization_servers": ["https://iam.example.org/"],
   "scopes_supported": ["read"],
   "bearer_methods_supported": ["header"]
@@ -1235,9 +1259,9 @@ GET https://data.example.org/.well-known/oauth-protected-resource/vo
 \end{verbatim}
 
 The client MUST retrieve this document over HTTPS and MUST NOT follow
-redirects when doing so. It MUST verify that the URL it originally requested
-is covered by the \verb|resource| value (Section~\ref{sec:ivoa-bearer-as}),
-and MUST abort otherwise. The \verb|resource| value and the
+redirects when doing so. It MUST verify that the \verb|resource| value is
+identical to the URL it originally requested, including any query component
+(\rfc{9728} section 3.3), and MUST abort otherwise. The \verb|resource| value and the
 \verb|authorization_servers| list remain \emph{untrusted} until Step~3 succeeds:
 any resource can name any authorization server here.
 
@@ -1254,7 +1278,10 @@ GET https://iam.example.org/.well-known/oauth-authorization-server
 \begin{verbatim}
 {
   "issuer": "https://iam.example.org/",
-  "protected_resources": ["https://data.example.org/vo"],
+  "protected_resources": [
+    "https://vo.example.org/tap",
+    "https://archive.example.org/datalink"
+  ],
   "token_endpoint": "https://iam.example.org/token",
   "device_authorization_endpoint": "https://iam.example.org/devicecode",
   "registration_endpoint": "https://iam.example.org/register"
@@ -1269,7 +1296,7 @@ flow, before starting any user login, if either fails:
       issuer identifier named in the PRM.
 \item[(b) Resource:] the metadata MUST contain a \verb|protected_resources|
       member, and the URL the client originally requested MUST be covered by
-      one of its entries (Section~\ref{sec:ivoa-bearer-as}).
+      at least one of its entries (Section~\ref{sec:ivoa-bearer-as}).
       An absent \verb|protected_resources| member is a failure, not a pass.
 \end{description}
 
@@ -1279,7 +1306,9 @@ PRM cannot satisfy check (b) unless that server lists it. The client MUST use
 the \rfc{8414} document for this check, since an OpenID Connect Discovery
 document may not carry \verb|protected_resources|. If several authorization
 servers are listed in the PRM, the client uses the first one that passes both
-checks.
+checks. In the example above, the requested URL is covered by the first
+entry, \url{https://vo.example.org/tap}; the second entry belongs to the same
+authentication domain but does not need to match the request.
 
 In flows that include an authorization response, such as a browser-based
 authorization code flow, the authorization server may also return its issuer
@@ -1319,7 +1348,9 @@ The client starts the Device Authorization Grant (\rfc{8628}):
 
 \begin{verbatim}
 POST https://iam.example.org/devicecode
-client_id=s6BhdRkqt3&scope=openid offline_access read
+client_id=s6BhdRkqt3
+scope=openid offline_access read
+resource=https://vo.example.org/tap
 \end{verbatim}
 
 \begin{verbatim}
@@ -1338,7 +1369,7 @@ The client MUST instruct the user to complete the login on the issuer's own
 page, displaying both the resource being accessed and the issuer being used:
 
 \begin{verbatim}
-To authorize access to https://data.example.org/vo, open
+To authorize access to https://vo.example.org/tap, open
 https://iam.example.org/device and enter the code: WDJB-MJHT
 \end{verbatim}
 
@@ -1348,12 +1379,23 @@ phishing or misdirection. The client never sees the user's credentials; they are
 entered only at the issuer.
 
 The client then polls the token endpoint (\rfc{8628}), honouring the
-\verb|authorization_pending| and \verb|slow_down| signals. The client SHOULD
-request a token whose audience is restricted to the resource identifier that
-passed Step~3, using the \verb|resource| parameter (\rfc{8707}) on the token
-request. As noted in Section~\ref{sec:ivoa-bearer-as}, the authorization
-server SHOULD reject a \verb|resource| it does not list, and SHOULD restrict
-the audience of the issued token accordingly. Where the authorization server
+\verb|authorization_pending| and \verb|slow_down| signals.
+
+The client SHOULD request a token whose audience is restricted to entries of
+the authorization server's \verb|protected_resources|, using the
+\verb|resource| parameter (\rfc{8707}). It SHOULD request at least the entry
+that covered the requested URL in Step~3, and MAY request further entries by
+repeating the parameter (\rfc{8707} section 2), up to all of them, so that a
+single token serves the whole authentication domain. A wider audience means
+fewer logins, but a leaked token can then be replayed at every resource in
+that audience. The Device Authorization Grant has no authorization request, so
+the same \verb|resource| parameters are sent on the device authorization
+request and on the token request. The client MUST NOT use the PRM
+\verb|resource| value as an audience: it may carry a query component, which
+\rfc{8707} section 2 says a resource indicator should not contain, and which
+some authorization servers reject. As noted in Section~\ref{sec:ivoa-bearer-as},
+the authorization server SHOULD reject a \verb|resource| it does not list,
+and SHOULD restrict the audience of the issued token accordingly. Where the authorization server
 cannot restrict the audience on the initial request, the client MAY instead
 narrow it with a subsequent OAuth~2.0 Token Exchange (\rfc{8693}~\citep{std:RFC8693}).
 
@@ -1362,11 +1404,11 @@ POST https://iam.example.org/token
 grant_type=urn:ietf:params:oauth:grant-type:device_code
 device_code=GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS
 client_id=s6BhdRkqt3
-resource=https://data.example.org/vo
+resource=https://vo.example.org/tap
 \end{verbatim}
 
 On success the response carries a token, preferably with an audience restricted
-to the target resource. Whether a refresh token is also returned depends on the
+to the requested entries. Whether a refresh token is also returned depends on the
 authorization server; many, INDIGO IAM among them, issue one only when the
 \verb|offline_access| scope was requested, as in this example:
 
@@ -1395,8 +1437,8 @@ any of those resources.}
 The client retries the original request, now presenting the token:
 
 \begin{verbatim}
-GET /vo/resource
-Host: data.example.org
+GET /tap/async/42
+Host: vo.example.org
 Authorization: Bearer SlAV32hkKG
 \end{verbatim}
 
@@ -1408,7 +1450,8 @@ Before returning any data, the service MUST validate the token:
       the {\tt typ} header and the {\tt aud} claim;
 \item verify the issuer (\verb|iss|) matches the expected authorization server;
 \item if the token carries an audience (\verb|aud|), verify that it includes
-      this resource's own identifier;
+      an identifier covering this resource, as listed in the authorization
+      server's \verb|protected_resources|;
 \item verify any required scope is present;
 \item verify the token has not expired.
 \end{itemize}
@@ -1435,7 +1478,7 @@ POST https://iam.example.org/token
 grant_type=refresh_token
 refresh_token=8xLOxBtZp8
 client_id=s6BhdRkqt3
-resource=https://data.example.org/vo
+resource=https://vo.example.org/tap
 \end{verbatim}
 
 When the original token was audience-restricted, the refresh request SHOULD
@@ -1457,11 +1500,13 @@ securely, as they grant persistent access.
       Authorization Server Metadata.
 \item Services MUST return only the \verb|resource_metadata| pointer in the
       challenge, and MUST publish their PRM document at the \rfc{9728}
-      well-known location on their own origin.
+      well-known location on their own origin, with a \verb|resource| value
+      identical to the requested URL.
 \item Clients SHOULD obtain audience-restricted tokens (Step~5), as recommended
       by \rfc{9700}~\citep{std:RFC9700}; such restriction is the only protection enforced by the
       service itself against replay of a leaked token at another listed
-      resource. A token MUST NOT be presented to a resource outside its
+      resource. The wider the requested audience, the more resources a leaked
+      token can reach. A token MUST NOT be presented to a resource outside its
       audience.
 \item Services MUST validate token integrity, issuer, scope and expiry, and the
       audience where present (Step~6), before releasing any data.
