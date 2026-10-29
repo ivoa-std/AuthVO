@@ -22,6 +22,7 @@
 \author{Russ Allbery}
 
 \editor{Mark Taylor}
+\editor{Jesus Salgado}
 
 % \previousversion[????URL????]{????Concise Document Label????}
 \previousversion{This is the first public release}
@@ -582,9 +583,9 @@ sent (Section~\ref{sec:ivoa-bearer-flow}).
 \end{description}
 
 When a protected resource is accessed without any token, the service
-responds with a 401 that carries \emph{only the pointer}, never the descriptor
-itself. Since the request carried no authentication information, the challenge
-carries no error information either (\rfc{6750} section 3.1):
+responds with a 401 whose challenge carries the \verb|resource_metadata|
+pointer and, since the request carried no authentication information, no
+error information (\rfc{6750} section 3.1):
 
 {\footnotesize
 \begin{verbatim}
@@ -640,7 +641,7 @@ A minimal PRM document, for a request to
 }
 \end{verbatim}
 
-From the issuer named in \verb|authorization_servers|, the client retrieves the
+From one of the issuers named in \verb|authorization_servers|, the client retrieves the
 Authorization Server Metadata (\rfc{8414}), which provides the list of
 protected resources and the endpoints the flow needs:
 
@@ -718,11 +719,6 @@ ignored. For instance, the identifier \url{https://vo.example.org/tap}:
 The identifiers listed in \verb|protected_resources|, together with all the
 URLs they cover, form the authentication domain of the authorization server:
 the set of resources to which a client may present a token obtained from it.
-Coverage applies only to these entries. The \verb|resource| member of a PRM
-document is not compared by coverage but, as \rfc{9728} section 3.3 requires,
-must be identical to the requested URL (Section~\ref{sec:ivoa-bearer-flow},
-Step~2), so clients that implement \rfc{9728} as written can follow this
-profile unchanged.
 
 Authorization servers SHOULD reject a request whose \verb|resource|
 parameters (\rfc{8707}~\citep{std:RFC8707}) are not all entries of their
@@ -1160,8 +1156,7 @@ that a client starting from nothing but a resource URL can: (a) discover the
 correct authorization server; (b) confirm, from the authorization server's own
 metadata, that the server issues tokens for this resource \emph{before} the
 user logs in or any token is sent; and (c) preferably obtain a token bound to
-the target resource, so that the token is of no use if leaked to another
-service.
+the resources it needs, which limits what a leaked token can be used for.
 
 The central threat addressed is the ``evil service'': a malicious or
 compromised resource that answers a request with a 401 whose PRM names a
@@ -1222,8 +1217,8 @@ Host: vo.example.org
 \end{verbatim}
 
 A protected service MUST respond with a 401 using HTTP authentication
-(\rfc{9110}) and the standard \verb|Bearer| scheme, carrying \emph{only} a pointer
-to its Protected Resource Metadata document. As the request carried no token,
+(\rfc{9110}) and the standard \verb|Bearer| scheme, with a \verb|resource_metadata|
+pointer to its Protected Resource Metadata document. As the request carried no token,
 the challenge carries no \verb|error| parameter (\rfc{6750} section 3.1):
 
 {\footnotesize
@@ -1234,11 +1229,6 @@ WWW-Authenticate: Bearer
   "https://vo.example.org/.well-known/oauth-protected-resource/tap/async/42"
 \end{verbatim}
 }
-
-The service MUST NOT return the authoritative descriptor (issuer URL, endpoints,
-etc.) directly in the challenge; it returns only the \verb|resource_metadata|
-pointer. The client MUST extract that pointer and MUST NOT proceed without it.
-At this stage the pointer is \emph{untrusted}.
 
 \subsubsection{Step 2: Retrieve the Protected Resource Metadata}
 
@@ -1305,8 +1295,8 @@ origin, a resource that merely names a legitimate authorization server in its
 PRM cannot satisfy check (b) unless that server lists it. The client MUST use
 the \rfc{8414} document for this check, since an OpenID Connect Discovery
 document may not carry \verb|protected_resources|. If several authorization
-servers are listed in the PRM, the client uses the first one that passes both
-checks. In the example above, the requested URL is covered by the first
+servers are listed in the PRM, the client may use any of them that passes both
+checks, choosing by its own criteria such as locality. In the example above, the requested URL is covered by the first
 entry, \url{https://vo.example.org/tap}; the second entry belongs to the same
 authentication domain but does not need to match the request.
 
@@ -1382,20 +1372,14 @@ The client then polls the token endpoint (\rfc{8628}), honouring the
 \verb|authorization_pending| and \verb|slow_down| signals.
 
 The client SHOULD request a token whose audience is restricted to entries of
-the authorization server's \verb|protected_resources|, using the
-\verb|resource| parameter (\rfc{8707}). It SHOULD request at least the entry
-that covered the requested URL in Step~3, and MAY request further entries by
-repeating the parameter (\rfc{8707} section 2), up to all of them, so that a
-single token serves the whole authentication domain. A wider audience means
-fewer logins, but a leaked token can then be replayed at every resource in
-that audience. The Device Authorization Grant has no authorization request, so
-the same \verb|resource| parameters are sent on the device authorization
-request and on the token request. The client MUST NOT use the PRM
-\verb|resource| value as an audience: it may carry a query component, which
-\rfc{8707} section 2 says a resource indicator should not contain, and which
-some authorization servers reject. As noted in Section~\ref{sec:ivoa-bearer-as},
-the authorization server SHOULD reject a \verb|resource| it does not list,
-and SHOULD restrict the audience of the issued token accordingly. Where the authorization server
+the authorization server's \verb|protected_resources|, with \verb|resource|
+parameters (\rfc{8707}) on the token request: at least the entry that covered
+the requested URL in Step~3, and optionally further entries, up to all of them
+for a token serving the whole authentication domain. A wider audience means
+fewer logins but more resources reachable with a leaked token. The client MAY
+send the same parameters on the device authorization request, where some
+servers honour them. It MUST NOT use the PRM \verb|resource| as an audience,
+since it may carry a query component. Where the authorization server
 cannot restrict the audience on the initial request, the client MAY instead
 narrow it with a subsequent OAuth~2.0 Token Exchange (\rfc{8693}~\citep{std:RFC8693}).
 
@@ -1498,8 +1482,7 @@ securely, as they grant persistent access.
       is a failure, not a pass.
 \item Clients MUST NOT follow redirects when retrieving the PRM document or the
       Authorization Server Metadata.
-\item Services MUST return only the \verb|resource_metadata| pointer in the
-      challenge, and MUST publish their PRM document at the \rfc{9728}
+\item Services MUST publish their PRM document at the \rfc{9728}
       well-known location on their own origin, with a \verb|resource| value
       identical to the requested URL.
 \item Clients SHOULD obtain audience-restricted tokens (Step~5), as recommended
